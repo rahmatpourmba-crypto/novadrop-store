@@ -20,30 +20,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build with Netlify (Next.js runtime)
-        run: npx netlify-cli build
+      - name: Build and deploy to Netlify (Next.js runtime)
+        run: npx netlify-cli deploy --prod --build --site ${{ secrets.NETLIFY_SITE_ID }} --message "Deploy from GitHub Actions"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-
-      - name: Deploy to Netlify
-        uses: nwtgck/actions-netlify@v3.0
-        with:
-          publish-dir: .next
-          functions-dir: .netlify/functions
-          production-branch: master
-          production-deploy: true
-          deploy-message: "Deploy from GitHub Actions"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          enable-pull-request-comment: false
-          enable-commit-comment: true
-          enable-commit-status: true
-          overwrites-pull-request-comment: true
-          fails-without-credentials: true
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
       - name: Print site URL
         run: |
           echo "Live site: https://novadrop-store.netlify.app"
-          echo "Deploy URL: https://\${{ github.run_id }}--novadrop-store.netlify.app"
