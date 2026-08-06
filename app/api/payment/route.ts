@@ -26,7 +26,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid payment request." }, { status: 400 });
     }
 
-    const order = getOrder(orderId);
+    const order = await getOrder(orderId);
     if (!order) {
       return NextResponse.json({ error: "Order not found." }, { status: 404 });
     }
@@ -34,16 +34,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "This order is already paid." }, { status: 400 });
     }
 
-    const existingPaid = db
-      .prepare("SELECT id FROM payments WHERE order_id = ? AND status = 'paid'")
-      .get(orderId);
+    const existingPaid = await db.get(
+      "SELECT id FROM payments WHERE order_id = ? AND status = 'paid'",
+      [orderId]
+    );
     if (existingPaid) {
       return NextResponse.json({ error: "This order is already paid." }, { status: 400 });
     }
 
-    db.prepare("DELETE FROM payments WHERE order_id = ? AND status = 'pending'").run(orderId);
+    await db.run("DELETE FROM payments WHERE order_id = ? AND status = 'pending'", [orderId]);
 
-    const s = getSettings();
+    const s = await getSettings();
     const rates = await getCryptoRates();
     const meta = CRYPTO_CURRENCIES.find((c) => c.code === currency)!;
     const cc = currency as CryptoCurrency;
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
     }
 
     const paymentId = uuid();
-    createPayment({
+    await createPayment({
       id: paymentId,
       orderId,
       provider,

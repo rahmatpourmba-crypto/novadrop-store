@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     if (!title) return NextResponse.json({ error: "Title is required." }, { status: 400 });
 
     let slug = String(body.slug || "").trim() || slugify(title);
-    if (db.prepare("SELECT id FROM products WHERE slug = ?").get(slug)) {
+    if (await db.get("SELECT id FROM products WHERE slug = ?", [slug])) {
       slug = `${slug}-${Date.now().toString(36)}`;
     }
 
@@ -29,13 +29,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid price." }, { status: 400 });
     }
 
-    const info = db
-      .prepare(
-        `INSERT INTO products
-         (slug, title, description, price, compare_at, category_id, images, stock, supplier, supplier_sku, supplier_data, is_active, featured)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
+    const id = await db.insert(
+      `INSERT INTO products
+       (slug, title, description, price, compare_at, category_id, images, stock, supplier, supplier_sku, supplier_data, is_active, featured)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
         slug,
         title,
         String(body.description || ""),
@@ -48,10 +46,11 @@ export async function POST(req: Request) {
         String(body.supplier_sku || ""),
         String(body.supplier_data || "{}"),
         body.is_active === false ? 0 : 1,
-        body.featured ? 1 : 0
-      );
+        body.featured ? 1 : 0,
+      ]
+    );
 
-    return NextResponse.json({ id: Number(info.lastInsertRowid), slug });
+    return NextResponse.json({ id, slug });
   } catch {
     return NextResponse.json({ error: "Could not create product." }, { status: 500 });
   }

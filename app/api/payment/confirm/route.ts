@@ -15,25 +15,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing order or transaction ID." }, { status: 400 });
     }
 
-    const order = getOrder(orderId);
+    const order = await getOrder(orderId);
     if (!order) {
       return NextResponse.json({ error: "Order not found." }, { status: 404 });
     }
 
-    const payment = getPaymentForOrder(orderId);
+    const payment = await getPaymentForOrder(orderId);
     if (!payment || payment.status !== "pending") {
       return NextResponse.json({ error: "No pending payment found for this order." }, { status: 400 });
     }
 
-    db.prepare("UPDATE payments SET txid = ?, updated_at = datetime('now') WHERE id = ?").run(
+    await db.run("UPDATE payments SET txid = ?, updated_at = datetime('now') WHERE id = ?", [
       txid,
-      payment.id
-    );
+      payment.id,
+    ]);
 
-    const s = getSettings();
+    const s = await getSettings();
     if (s.auto_approve_manual === "1") {
-      markPaymentPaid(payment.id, txid);
-      updateOrderStatus(orderId, "paid");
+      await markPaymentPaid(payment.id, txid);
+      await updateOrderStatus(orderId, "paid");
       return NextResponse.json({ ok: true, approved: true });
     }
 

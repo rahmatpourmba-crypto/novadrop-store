@@ -47,7 +47,7 @@ export async function POST(req: Request) {
         updates[key] = String(body[key]);
       }
     }
-    setSettings(updates);
+    await setSettings(updates);
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "Could not save settings." }, { status: 500 });

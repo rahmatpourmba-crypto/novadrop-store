@@ -11,8 +11,8 @@ export interface CjConfig {
   payType: string;
 }
 
-export function getCjConfig(): CjConfig {
-  const s = getSettings();
+export async function getCjConfig(): Promise<CjConfig> {
+  const s = await getSettings();
   return {
     apiKey: (s.cj_api_key ?? "").trim(),
     fromCountryCode: (s.cj_from_country ?? "CN").trim().toUpperCase() || "CN",
@@ -84,7 +84,7 @@ export interface CjProduct {
 }
 
 export async function searchProducts(keyword: string, page = 1, size = 12): Promise<CjProduct[]> {
-  const cfg = getCjConfig();
+  const cfg = await getCjConfig();
   const token = await getAccessToken(cfg.apiKey);
   const q = new URLSearchParams({ page: String(page), size: String(size) });
   if (keyword) q.set("keyWord", keyword);
@@ -115,7 +115,7 @@ export interface CjProductDetail {
 }
 
 export async function getVariants(pid: string): Promise<CjProductDetail> {
-  const cfg = getCjConfig();
+  const cfg = await getCjConfig();
   const token = await getAccessToken(cfg.apiKey);
   const data = await request<CjProductDetail>(`/product/variant/query?pid=${encodeURIComponent(pid)}`, {
     token,
@@ -124,7 +124,7 @@ export async function getVariants(pid: string): Promise<CjProductDetail> {
 }
 
 export async function getVariantBySku(variantSku: string): Promise<CjProductDetail | null> {
-  const cfg = getCjConfig();
+  const cfg = await getCjConfig();
   const token = await getAccessToken(cfg.apiKey);
   const data = await request<CjProductDetail>(
     `/product/variant/query?variantSku=${encodeURIComponent(variantSku)}`,
@@ -140,7 +140,7 @@ export interface CjFreightOption {
 }
 
 export async function freightCalculate(lines: Array<{ vid: string; quantity: number }>, endCountryCode: string): Promise<CjFreightOption[]> {
-  const cfg = getCjConfig();
+  const cfg = await getCjConfig();
   const token = await getAccessToken(cfg.apiKey);
   const data = await request<CjFreightOption[]>("/logistic/freightCalculate", {
     method: "POST",
@@ -183,7 +183,7 @@ export interface CjCreateOrderResult {
 }
 
 export async function createOrder(input: CjCreateOrderInput): Promise<CjCreateOrderResult> {
-  const cfg = getCjConfig();
+  const cfg = await getCjConfig();
   const token = await getAccessToken(cfg.apiKey);
   const data = await request<CjCreateOrderResult>("/shopping/order/createOrderV2", {
     method: "POST",
@@ -225,7 +225,7 @@ export interface CjOrderInfo {
 }
 
 export async function queryOrder(orderId: string): Promise<CjOrderInfo | null> {
-  const cfg = getCjConfig();
+  const cfg = await getCjConfig();
   const token = await getAccessToken(cfg.apiKey);
   try {
     const data = await request<CjOrderInfo>(`/shopping/order/query?orderId=${encodeURIComponent(orderId)}`, {

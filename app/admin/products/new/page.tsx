@@ -3,8 +3,8 @@ import ProductForm from "../../components/ProductForm";
 
 export const dynamic = "force-dynamic";
 
-export default function NewProductPage() {
-  const categories = listCategories();
+export default async function NewProductPage() {
+  const categories = await listCategories();
   return (
     <div>
       <h1 className="text-2xl font-bold">Add product</h1>

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function StoreLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const settings = getSettings();
+  const settings = await getSettings();
   const storeName = settings.store_name || "NovaDrop";
   const t = await getT();
 

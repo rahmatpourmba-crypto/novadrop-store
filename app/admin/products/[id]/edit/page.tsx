@@ -11,10 +11,10 @@ export default async function EditProductPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const product = getProductById(Number(id));
+  const product = await getProductById(Number(id));
   if (!product) notFound();
 
-  const categories = listCategories();
+  const categories = await listCategories();
 
   return (
     <div>

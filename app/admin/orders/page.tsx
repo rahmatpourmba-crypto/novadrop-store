@@ -6,7 +6,18 @@ import ExportOrdersButton from "../components/ExportOrdersButton";
 export const dynamic = "force-dynamic";
 
 export default async function AdminOrdersPage() {
-  const orders = listOrders(100);
+  const orders = await listOrders(100);
+
+  const customers = await Promise.all(
+    [...new Set(orders.map((o) => o.customer_id))].map((id) => getCustomer(id))
+  );
+  const customerById = new Map(
+    customers.filter((c) => !!c).map((c) => [c!.id, c!])
+  );
+  const payments = await Promise.all(orders.map((o) => getPaymentForOrder(o.id)));
+  const paymentByOrder = new Map(
+    payments.filter((p) => !!p).map((p) => [p!.order_id, p!])
+  );
 
   return (
     <div>
@@ -33,8 +44,8 @@ export default async function AdminOrdersPage() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {orders.map((o) => {
-              const customer = getCustomer(o.customer_id);
-              const payment = getPaymentForOrder(o.id);
+              const customer = customerById.get(o.customer_id);
+              const payment = paymentByOrder.get(o.id);
               const items = JSON.parse(o.items) as Array<{ qty: number }>;
               const itemCount = items.reduce((s, i) => s + i.qty, 0);
               return (

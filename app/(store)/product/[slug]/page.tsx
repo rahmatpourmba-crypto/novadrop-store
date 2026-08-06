@@ -15,7 +15,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const product = getProductBySlug(slug);
+  const product = await getProductBySlug(slug);
   if (!product) return { title: "Product not found" };
   return {
     title: `${product.title} — NovaDrop`,
@@ -29,12 +29,12 @@ export default async function ProductPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = getProductBySlug(slug);
+  const product = await getProductBySlug(slug);
   if (!product) notFound();
 
   const images = imagesOf(product);
   const mainImg = images[0] || `https://picsum.photos/seed/${product.slug}/900/900`;
-  const related = listProducts({ category: product.category_slug })
+  const related = (await listProducts({ category: product.category_slug }))
     .filter((p) => p.id !== product.id)
     .slice(0, 4);
 

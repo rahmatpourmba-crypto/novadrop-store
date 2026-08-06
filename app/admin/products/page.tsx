@@ -6,7 +6,7 @@ import DeleteProductButton from "../components/DeleteProductButton";
 export const dynamic = "force-dynamic";
 
 export default async function AdminProductsPage() {
-  const products = listProducts();
+  const products = await listProducts();
 
   return (
     <div>

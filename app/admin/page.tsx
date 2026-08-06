@@ -6,16 +6,9 @@ import { formatPrice, formatDate } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
-  const totals = orderTotals();
-  const orders = recentOrders(8);
-  const pendingPayments = db
-    .prepare(
-      `SELECT p.*, o.total, o.status AS order_status
-       FROM payments p JOIN orders o ON o.id = p.order_id
-       WHERE p.status = 'pending' AND p.txid != ''
-       ORDER BY p.updated_at DESC LIMIT 10`
-    )
-    .all() as Array<{
+  const totals = await orderTotals();
+  const orders = await recentOrders(8);
+  const pendingPayments = await db.all<{
     id: string;
     order_id: string;
     currency: string;
@@ -24,11 +17,23 @@ export default async function AdminDashboardPage() {
     status: string;
     total: number;
     order_status: string;
-  }>;
+  }>(
+    `SELECT p.*, o.total, o.status AS order_status
+     FROM payments p JOIN orders o ON o.id = p.order_id
+     WHERE p.status = 'pending' AND p.txid != ''
+     ORDER BY p.updated_at DESC LIMIT 10`
+  );
 
-  const lowStock = db
-    .prepare("SELECT id, title, stock FROM products WHERE stock <= 10 ORDER BY stock ASC LIMIT 8")
-    .all() as Array<{ id: number; title: string; stock: number }>;
+  const lowStock = await db.all<{ id: number; title: string; stock: number }>(
+    "SELECT id, title, stock FROM products WHERE stock <= 10 ORDER BY stock ASC LIMIT 8"
+  );
+
+  const customers = await Promise.all(
+    [...new Set(orders.map((o) => o.customer_id))].map((id) => getCustomer(id))
+  );
+  const customerById = new Map(
+    customers.filter((c) => !!c).map((c) => [c!.id, c!])
+  );
 
   const cards = [
     { label: "Total orders", value: String(totals.order_count), color: "bg-gray-900" },
@@ -97,7 +102,7 @@ export default async function AdminDashboardPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {orders.map((o) => {
-                  const customer = getCustomer(o.customer_id);
+                  const customer = customerById.get(o.customer_id);
                   return (
                     <tr key={o.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">

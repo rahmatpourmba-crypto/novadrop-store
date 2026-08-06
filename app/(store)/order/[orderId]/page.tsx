@@ -19,11 +19,11 @@ export default async function OrderStatusPage({
   params: Promise<{ orderId: string }>;
 }) {
   const { orderId } = await params;
-  const order = getOrder(orderId);
+  const order = await getOrder(orderId);
   if (!order) notFound();
 
   const items = getOrderItems(order);
-  const payment = getPaymentForOrder(orderId);
+  const payment = await getPaymentForOrder(orderId);
 
   const orderIdx = STEPS.findIndex((s) => s.key === order.status);
   const currentIdx = order.status === "cancelled" ? -1 : orderIdx;

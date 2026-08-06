@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
     }
 
-    const s = getSettings();
+    const s = await getSettings();
     const currency = s.currency || "USD";
 
     const orderItems: Array<{
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     }> = [];
 
     for (const it of items) {
-      const product = getProductById(Number(it.product_id));
+      const product = await getProductById(Number(it.product_id));
       if (!product || !product.is_active) {
         return NextResponse.json({ error: "A product in your cart is no longer available." }, { status: 400 });
       }
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     const shipping = subtotal >= freeThreshold ? 0 : numSetting(s, "shipping_fee", 9.99);
     const total = subtotal + shipping;
 
-    const customerId = createCustomer({
+    const customerId = await createCustomer({
       email: String(email).toLowerCase().trim(),
       name: String(name),
       phone: String(phone || ""),
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
     });
 
     const id = orderId();
-    createOrder({ id, customerId, items: orderItems, subtotal, shipping, total, currency });
+    await createOrder({ id, customerId, items: orderItems, subtotal, shipping, total, currency });
 
     return NextResponse.json({ orderId: id, total });
   } catch {

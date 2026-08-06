@@ -11,12 +11,12 @@ export async function GET(
   { params }: { params: Promise<{ orderId: string }> }
 ) {
   const { orderId } = await params;
-  const order = getOrder(orderId);
+  const order = await getOrder(orderId);
   if (!order) {
     return NextResponse.json({ status: "not_found" }, { status: 404 });
   }
 
-  const payment = getPaymentForOrder(orderId);
+  const payment = await getPaymentForOrder(orderId);
   if (!payment) {
     return NextResponse.json({
       status: "no_payment",
@@ -31,7 +31,7 @@ export async function GET(
     payment.provider === "nowpayments" &&
     payment.external_id
   ) {
-    const s = getSettings();
+    const s = await getSettings();
     if (s.nowpayments_api_key) {
       const npStatus = await checkNowPaymentsStatus(
         s.nowpayments_api_key,
@@ -39,17 +39,20 @@ export async function GET(
       );
       const normalized = normalizeNowPaymentsStatus(npStatus);
       if (normalized === "paid") {
-        markPaymentPaid(payment.id, payment.txid || "");
+        await markPaymentPaid(payment.id, payment.txid || "");
         paymentStatus = "paid";
       } else if (normalized === "failed") {
-        db.prepare("UPDATE payments SET status = 'failed', updated_at = datetime('now') WHERE id = ?").run(payment.id);
+        await db.run(
+          "UPDATE payments SET status = 'failed', updated_at = datetime('now') WHERE id = ?",
+          [payment.id]
+        );
         paymentStatus = "failed";
       }
     }
   }
 
   if (paymentStatus === "paid" && order.status === "pending") {
-    updateOrderStatus(order.id, "paid");
+    await updateOrderStatus(order.id, "paid");
   }
 
   return NextResponse.json({

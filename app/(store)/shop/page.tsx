@@ -13,9 +13,9 @@ export default async function ShopPage({
   const category = params.category || "";
   const q = params.q || "";
 
-  const products = listProducts({ category, q });
-  const categories = listCategories();
-  const activeCat = category ? getCategoryBySlug(category) : undefined;
+  const products = await listProducts({ category, q });
+  const categories = await listCategories();
+  const activeCat = category ? await getCategoryBySlug(category) : undefined;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">

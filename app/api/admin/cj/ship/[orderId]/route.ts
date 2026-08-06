@@ -21,12 +21,12 @@ export async function POST(
   if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orderId } = await params;
-  const order = getOrder(orderId);
+  const order = await getOrder(orderId);
   if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
   if (!order.customer) return NextResponse.json({ error: "Order has no customer." }, { status: 400 });
 
   try {
-    const cfg = getCjConfig();
+    const cfg = await getCjConfig();
     if (!cfg.apiKey) {
       return NextResponse.json({ error: "CJ API key is not configured in Settings." }, { status: 400 });
     }
@@ -35,9 +35,10 @@ export async function POST(
     const lines: LineWithVid[] = [];
 
     for (const item of items) {
-      const product = db
-        .prepare("SELECT supplier_data FROM products WHERE id = ?")
-        .get(item.product_id) as { supplier_data?: string } | undefined;
+      const product = await db.get<{ supplier_data?: string }>(
+        "SELECT supplier_data FROM products WHERE id = ?",
+        [item.product_id]
+      );
       let vid = "";
       let supplierData: Record<string, string> = {};
       try {
@@ -99,19 +100,19 @@ export async function POST(
       remark: `Store order ${orderId}`,
     });
 
-    setSupplierOrderId(orderId, result.orderId);
+    await setSupplierOrderId(orderId, result.orderId);
     if (order.status === "paid" || order.status === "pending") {
-      updateOrderStatus(orderId, "processing");
+      await updateOrderStatus(orderId, "processing");
     }
 
-    const s = getSettings();
+    const s = await getSettings();
     const note = [
       `CJ order ${result.orderId} created (logistics: ${logisticName})`,
       `CJ total: $${result.orderAmount ?? ""} product: $${result.productAmount ?? ""} postage: $${result.postageAmount ?? ""}`,
       `Store: ${s.store_name ?? ""}`,
     ].join("\n");
     const prev = order.admin_note ? order.admin_note + "\n\n" : "";
-    db.prepare("UPDATE orders SET admin_note = ? WHERE id = ?").run(prev + note, orderId);
+    await db.run("UPDATE orders SET admin_note = ? WHERE id = ?", [prev + note, orderId]);
 
     return NextResponse.json({ ok: true, orderId: result.orderId, logisticName, result });
   } catch (e) {

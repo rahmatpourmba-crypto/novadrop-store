@@ -3,7 +3,7 @@ import CjClient from "./CjClient";
 
 export const dynamic = "force-dynamic";
 
-export default function CjImportPage() {
-  const categories = listCategories();
+export default async function CjImportPage() {
+  const categories = await listCategories();
   return <CjClient categories={categories.map((c) => ({ id: c.id, name: c.name }))} />;
 }

@@ -31,7 +31,7 @@ const FALLBACK_RATES: Record<string, number> = {
 export async function getCryptoRates(): Promise<Record<string, number>> {
   if (cache && Date.now() - cache.at < 5 * 60_000) return cache.rates;
 
-  const s = getSettings();
+  const s = await getSettings();
   const manual: Record<string, number> = {};
   for (const c of CRYPTO_CURRENCIES) {
     const v = parseFloat(s[`exchange_${c.code}`] ?? "");

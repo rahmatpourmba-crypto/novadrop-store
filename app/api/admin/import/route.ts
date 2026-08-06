@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/session";
-import { db } from "@/lib/db";
+import { db, withTx } from "@/lib/db";
 import { slugify } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -76,21 +76,19 @@ export async function POST(req: Request) {
       keys.length > 0 ? keys.map((k) => header?.indexOf(k) ?? -1).filter((i) => i >= 0).map((i) => r[i] ?? "").filter(Boolean)[0] ?? "" : (r[idx] ?? "");
 
     const catBySlug = new Map(
-      (db.prepare("SELECT id, slug, name FROM categories").all() as Array<{ id: number; slug: string; name: string }>)
-        .map((c) => [c.slug, c])
-    );
-
-    const insert = db.prepare(
-      `INSERT INTO products
-         (slug, title, description, price, compare_at, category_id, images, stock, supplier, supplier_sku, is_active, featured)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)`
+      (
+        await db.all<{ id: number; slug: string; name: string }>(
+          "SELECT id, slug, name FROM categories"
+        )
+      ).map((c) => [c.slug, c])
     );
 
     const imported: Array<{ title: string; slug: string }> = [];
     const errors: Array<{ row: number; error: string }> = [];
 
-    const tx = db.transaction(() => {
-      dataRows.forEach((r, i) => {
+    await withTx(async (tx) => {
+      for (let i = 0; i < dataRows.length; i++) {
+        const r = dataRows[i];
         const rowNum = i + (hasHeader ? 2 : 1);
         try {
           const title = get(r, ["title", "name"], 0).trim();
@@ -109,37 +107,44 @@ export async function POST(req: Request) {
             const slug = slugify(categoryName);
             let cat = catBySlug.get(slug);
             if (!cat) {
-              const info = db.prepare("INSERT INTO categories (slug, name) VALUES (?, ?)").run(slug, categoryName);
-              cat = { id: Number(info.lastInsertRowid), slug, name: categoryName };
+              const id = await tx.insert(
+                "INSERT INTO categories (slug, name) VALUES (?, ?)",
+                [slug, categoryName]
+              );
+              cat = { id, slug, name: categoryName };
               catBySlug.set(slug, cat);
             }
             categoryId = cat.id;
           }
 
           let slug = slugify(title);
-          if (db.prepare("SELECT id FROM products WHERE slug = ?").get(slug)) {
+          if (await tx.get("SELECT id FROM products WHERE slug = ?", [slug])) {
             slug = `${slug}-${Date.now().toString(36)}${i}`;
           }
 
-          insert.run(
-            slug,
-            title,
-            description,
-            price,
-            null,
-            categoryId,
-            JSON.stringify(images),
-            Number.isFinite(stock) ? stock : 0,
-            supplier,
-            supplierSku
+          await tx.run(
+            `INSERT INTO products
+               (slug, title, description, price, compare_at, category_id, images, stock, supplier, supplier_sku, is_active, featured)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)`,
+            [
+              slug,
+              title,
+              description,
+              price,
+              null,
+              categoryId,
+              JSON.stringify(images),
+              Number.isFinite(stock) ? stock : 0,
+              supplier,
+              supplierSku,
+            ]
           );
           imported.push({ title, slug });
         } catch (e) {
           errors.push({ row: rowNum, error: e instanceof Error ? e.message : "failed" });
         }
-      });
+      }
     });
-    tx();
 
     return NextResponse.json({ ok: true, imported: imported.length, errors });
   } catch (e) {

@@ -12,15 +12,19 @@ export async function POST(req: Request) {
     const username = String(body.username || "").trim();
     const password = String(body.password || "");
 
-    const admin = db
-      .prepare("SELECT id, username, password_hash FROM admin_users WHERE username = ?")
-      .get(username) as { id: number; username: string; password_hash: string } | undefined;
+    const admin = await db.get<{
+      id: number;
+      username: string;
+      password_hash: string;
+    }>("SELECT id, username, password_hash FROM admin_users WHERE username = ?", [
+      username,
+    ]);
 
     if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
       return NextResponse.json({ error: "Invalid username or password." }, { status: 401 });
     }
 
-    const token = createSession(admin.id);
+    const token = await createSession(admin.id);
     const store = await cookies();
     store.set("admin_token", token, {
       httpOnly: true,

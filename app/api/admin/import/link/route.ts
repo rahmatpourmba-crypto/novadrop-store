@@ -65,17 +65,15 @@ export async function POST(req: Request) {
     const supplier = String(body.supplier || "").trim() || guessSupplier(url);
 
     let slug = slugify(title);
-    if (db.prepare("SELECT id FROM products WHERE slug = ?").get(slug)) {
+    if (await db.get("SELECT id FROM products WHERE slug = ?", [slug])) {
       slug = `${slug}-${Date.now().toString(36)}`;
     }
 
-    const info = db
-      .prepare(
-        `INSERT INTO products
-           (slug, title, description, price, category_id, images, stock, supplier, supplier_sku, is_active, featured)
-         VALUES (?, ?, ?, ?, ?, ?, 100, ?, ?, 1, 0)`
-      )
-      .run(
+    const id = await db.insert(
+      `INSERT INTO products
+         (slug, title, description, price, category_id, images, stock, supplier, supplier_sku, is_active, featured)
+       VALUES (?, ?, ?, ?, ?, ?, 100, ?, ?, 1, 0)`,
+      [
         slug,
         title,
         description,
@@ -83,12 +81,13 @@ export async function POST(req: Request) {
         body.category_id ? Number(body.category_id) : null,
         JSON.stringify(image ? [image] : []),
         supplier,
-        url.slice(0, 200)
-      );
+        url.slice(0, 200),
+      ]
+    );
 
     return NextResponse.json({
       ok: true,
-      id: Number(info.lastInsertRowid),
+      id,
       slug,
       title,
       source: supplier,

@@ -15,13 +15,13 @@ export default async function AdminOrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const order = getOrder(id);
+  const order = await getOrder(id);
   if (!order) notFound();
 
   const items = getOrderItems(order);
-  const payment = getPaymentForOrder(id);
-  const customer = getCustomer(order.customer_id);
-  const s = getSettings();
+  const payment = await getPaymentForOrder(id);
+  const customer = await getCustomer(order.customer_id);
+  const s = await getSettings();
 
   const supplierLines = [
     `New order ${order.id}`,

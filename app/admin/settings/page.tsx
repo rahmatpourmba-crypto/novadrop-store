@@ -3,8 +3,8 @@ import SettingsForm from "../components/SettingsForm";
 
 export const dynamic = "force-dynamic";
 
-export default function AdminSettingsPage() {
-  const settings = getSettings();
+export default async function AdminSettingsPage() {
+  const settings = await getSettings();
   return (
     <div>
       <h1 className="text-2xl font-bold">Settings</h1>

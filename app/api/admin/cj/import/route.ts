@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/session";
-import { db } from "@/lib/db";
+import { db, withTx } from "@/lib/db";
 import { slugify } from "@/lib/utils";
 import { searchProducts, getVariants } from "@/lib/cj";
 
@@ -54,19 +54,13 @@ export async function POST(req: Request) {
     const baseName = detail.productNameEn || "CJ Product";
     const baseImage = detail.productImage || "";
 
-    const insert = db.prepare(
-      `INSERT INTO products
-         (slug, title, description, price, compare_at, category_id, images, stock, supplier, supplier_sku, supplier_data, is_active, featured)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CJ', ?, ?, ?, ?)`
-    );
-
     const created: Array<{ id: number; slug: string; title: string }> = [];
-    const tx = db.transaction(() => {
+    await withTx(async (tx) => {
       for (const v of detail.variants) {
         if (!vids.includes(v.vid)) continue;
         const title = vids.length > 1 && v.variantNameEn ? `${baseName} - ${v.variantNameEn}` : baseName;
         let slug = slugify(title);
-        if (db.prepare("SELECT id FROM products WHERE slug = ?").get(slug)) {
+        if (await tx.get("SELECT id FROM products WHERE slug = ?", [slug])) {
           slug = `${slug}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
         }
         const price = Math.max(Number(v.variantSellPrice) * markup, 0.99);
@@ -78,24 +72,28 @@ export async function POST(req: Request) {
           variantNameEn: v.variantNameEn,
           baseImage,
         });
-        const info = insert.run(
-          slug,
-          title,
-          "",
-          Math.round(price * 100) / 100,
-          null,
-          categoryId,
-          images,
-          Number(v.variantStock) || 0,
-          v.variantSku,
-          supplierData,
-          isActive,
-          featured
+        const id = await tx.insert(
+          `INSERT INTO products
+             (slug, title, description, price, compare_at, category_id, images, stock, supplier, supplier_sku, supplier_data, is_active, featured)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CJ', ?, ?, ?, ?)`,
+          [
+            slug,
+            title,
+            "",
+            Math.round(price * 100) / 100,
+            null,
+            categoryId,
+            images,
+            Number(v.variantStock) || 0,
+            v.variantSku,
+            supplierData,
+            isActive,
+            featured,
+          ]
         );
-        created.push({ id: Number(info.lastInsertRowid), slug, title });
+        created.push({ id, slug, title });
       }
     });
-    tx();
 
     if (created.length === 0) {
       return NextResponse.json({ error: "No variants matched." }, { status: 400 });

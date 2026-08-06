@@ -5,10 +5,12 @@ import ProductCard from "./components/ProductCard";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
-  const featured = listFeatured();
-  const categories = listCategories();
-  const s = getSettings();
+export default async function HomePage() {
+  const [featured, categories, s] = await Promise.all([
+    listFeatured(),
+    listCategories(),
+    getSettings(),
+  ]);
 
   return (
     <div>

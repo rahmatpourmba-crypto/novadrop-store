@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const s = getSettings();
+    const s = await getSettings();
     const apiKey = s.nowpayments_api_key;
     if (!apiKey) {
       return new NextResponse("Not configured", { status: 403 });
@@ -33,9 +33,10 @@ export async function POST(req: Request) {
     const status = String(body.payment_status || "");
     const txid = String(body.actual_payment_id || "");
 
-    const payment = db
-      .prepare("SELECT id, order_id FROM payments WHERE external_id = ?")
-      .get(paymentId) as { id: string; order_id: string } | undefined;
+    const payment = await db.get<{ id: string; order_id: string }>(
+      "SELECT id, order_id FROM payments WHERE external_id = ?",
+      [paymentId]
+    );
 
     if (!payment) {
       return new NextResponse("OK", { status: 200 });
@@ -43,10 +44,13 @@ export async function POST(req: Request) {
 
     const normalized = normalizeNowPaymentsStatus(status);
     if (normalized === "paid") {
-      markPaymentPaid(payment.id, txid);
-      updateOrderStatus(payment.order_id, "paid");
+      await markPaymentPaid(payment.id, txid);
+      await updateOrderStatus(payment.order_id, "paid");
     } else if (normalized === "failed") {
-      db.prepare("UPDATE payments SET status = 'failed', updated_at = datetime('now') WHERE id = ?").run(payment.id);
+      await db.run(
+        "UPDATE payments SET status = 'failed', updated_at = datetime('now') WHERE id = ?",
+        [payment.id]
+      );
     }
 
     return new NextResponse("OK", { status: 200 });

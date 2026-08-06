@@ -17,9 +17,10 @@ export async function PUT(
   if (!uid) return unauthorized();
 
   const { id } = await params;
-  const existing = db.prepare("SELECT id, slug FROM products WHERE id = ?").get(id) as
-    | { id: number; slug: string }
-    | undefined;
+  const existing = await db.get<{ id: number; slug: string }>(
+    "SELECT id, slug FROM products WHERE id = ?",
+    [id]
+  );
   if (!existing) return NextResponse.json({ error: "Product not found." }, { status: 404 });
 
   try {
@@ -28,9 +29,10 @@ export async function PUT(
     if (!title) return NextResponse.json({ error: "Title is required." }, { status: 400 });
 
     let slug = String(body.slug || "").trim() || slugify(title);
-    const dup = db.prepare("SELECT id FROM products WHERE slug = ? AND id != ?").get(slug, id) as
-      | { id: number }
-      | undefined;
+    const dup = await db.get<{ id: number }>(
+      "SELECT id FROM products WHERE slug = ? AND id != ?",
+      [slug, id]
+    );
     if (dup) slug = `${slug}-${Date.now().toString(36)}`;
 
     const price = Number(body.price);
@@ -38,26 +40,27 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid price." }, { status: 400 });
     }
 
-    db.prepare(
+    await db.run(
       `UPDATE products SET
          slug = ?, title = ?, description = ?, price = ?, compare_at = ?, category_id = ?,
          images = ?, stock = ?, supplier = ?, supplier_sku = ?, is_active = ?, featured = ?,
          updated_at = datetime('now')
-       WHERE id = ?`
-    ).run(
-      slug,
-      title,
-      String(body.description || ""),
-      price,
-      body.compare_at ? Number(body.compare_at) : null,
-      body.category_id ? Number(body.category_id) : null,
-      JSON.stringify(Array.isArray(body.images) ? body.images : []),
-      Number(body.stock) || 0,
-      String(body.supplier || ""),
-      String(body.supplier_sku || ""),
-      body.is_active === false ? 0 : 1,
-      body.featured ? 1 : 0,
-      id
+       WHERE id = ?`,
+      [
+        slug,
+        title,
+        String(body.description || ""),
+        price,
+        body.compare_at ? Number(body.compare_at) : null,
+        body.category_id ? Number(body.category_id) : null,
+        JSON.stringify(Array.isArray(body.images) ? body.images : []),
+        Number(body.stock) || 0,
+        String(body.supplier || ""),
+        String(body.supplier_sku || ""),
+        body.is_active === false ? 0 : 1,
+        body.featured ? 1 : 0,
+        id,
+      ]
     );
 
     return NextResponse.json({ ok: true, slug });
@@ -74,6 +77,6 @@ export async function DELETE(
   if (!uid) return unauthorized();
 
   const { id } = await params;
-  db.prepare("DELETE FROM products WHERE id = ?").run(id);
+  await db.run("DELETE FROM products WHERE id = ?", [id]);
   return NextResponse.json({ ok: true });
 }

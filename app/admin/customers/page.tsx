@@ -5,17 +5,18 @@ import { formatPrice, formatDate } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function AdminCustomersPage() {
-  const customers = listCustomers();
-  const rows = customers.map((c) => {
-    const stats = db
-      .prepare(
+  const customers = await listCustomers();
+  const rows = await Promise.all(
+    customers.map(async (c) => {
+      const stats = await db.get<{ order_count: number; total_spent: number }>(
         `SELECT COUNT(*) AS order_count,
                 COALESCE(SUM(CASE WHEN status != 'cancelled' THEN total ELSE 0 END), 0) AS total_spent
-         FROM orders WHERE customer_id = ?`
-      )
-      .get(c.id) as { order_count: number; total_spent: number };
-    return { ...c, ...stats };
-  });
+         FROM orders WHERE customer_id = ?`,
+        [c.id]
+      );
+      return { ...c, ...(stats ?? { order_count: 0, total_spent: 0 }) };
+    })
+  );
 
   return (
     <div>

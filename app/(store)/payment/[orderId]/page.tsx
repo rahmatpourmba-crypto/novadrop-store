@@ -12,11 +12,11 @@ export default async function PaymentPage({
   params: Promise<{ orderId: string }>;
 }) {
   const { orderId } = await params;
-  const order = getOrder(orderId);
+  const order = await getOrder(orderId);
   if (!order) notFound();
 
   const items = getOrderItems(order);
-  const payment = getPaymentForOrder(orderId);
+  const payment = await getPaymentForOrder(orderId);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">

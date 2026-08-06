@@ -2,123 +2,37 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import bcrypt from "bcryptjs";
+import pg from "pg";
 
-const dataDir = path.join(process.cwd(), "data");
-fs.mkdirSync(dataDir, { recursive: true });
+export type SqlParams = Array<string | number | null>;
 
-const dbPath =
-  process.env.DATABASE_PATH || path.join(dataDir, "store.db");
+// Postgres returns INT8 (COUNT, etc.) as strings by default; coerce to number.
+pg.types.setTypeParser(20, (v) => parseInt(v, 10));
 
 declare global {
   // eslint-disable-next-line no-var
   var __storeDb: Database.Database | undefined;
+  // eslint-disable-next-line no-var
+  var __pgPool: pg.Pool | undefined;
+  // eslint-disable-next-line no-var
+  var __pgInit: Promise<void> | undefined;
 }
 
-function initSchema(db: Database.Database) {
-  db.exec(`
-CREATE TABLE IF NOT EXISTS settings (
-  key TEXT PRIMARY KEY,
-  value TEXT
-);
-
-CREATE TABLE IF NOT EXISTS categories (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  slug TEXT UNIQUE NOT NULL,
-  name TEXT NOT NULL,
-  description TEXT DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS products (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  slug TEXT UNIQUE NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT DEFAULT '',
-  price REAL NOT NULL,
-  compare_at REAL,
-  category_id INTEGER REFERENCES categories(id),
-  images TEXT DEFAULT '[]',
-  stock INTEGER NOT NULL DEFAULT 0,
-  supplier TEXT DEFAULT '',
-  supplier_sku TEXT DEFAULT '',
-  supplier_data TEXT DEFAULT '{}',
-  is_active INTEGER NOT NULL DEFAULT 1,
-  featured INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS customers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT NOT NULL,
-  name TEXT NOT NULL,
-  phone TEXT DEFAULT '',
-  country TEXT DEFAULT '',
-  country_code TEXT DEFAULT '',
-  city TEXT DEFAULT '',
-  address TEXT DEFAULT '',
-  zip TEXT DEFAULT '',
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS orders (
-  id TEXT PRIMARY KEY,
-  customer_id INTEGER REFERENCES customers(id),
-  items TEXT NOT NULL,
-  subtotal REAL NOT NULL,
-  shipping REAL NOT NULL DEFAULT 0,
-  total REAL NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  currency TEXT NOT NULL DEFAULT 'USD',
-  tracking TEXT DEFAULT '',
-  admin_note TEXT DEFAULT '',
-  supplier_order_id TEXT DEFAULT '',
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS payments (
-  id TEXT PRIMARY KEY,
-  order_id TEXT REFERENCES orders(id),
-  provider TEXT NOT NULL,
-  currency TEXT NOT NULL,
-  amount_usd REAL NOT NULL,
-  amount_crypto REAL NOT NULL,
-  address TEXT DEFAULT '',
-  txid TEXT DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'pending',
-  external_id TEXT DEFAULT '',
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS admin_users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS sessions (
-  token TEXT PRIMARY KEY,
-  admin_user_id INTEGER NOT NULL,
-  created_at TEXT DEFAULT (datetime('now')),
-  expires_at TEXT NOT NULL
-);
-`);
+export interface TxClient {
+  get(sql: string, params?: SqlParams): Promise<unknown>;
+  all(sql: string, params?: SqlParams): Promise<unknown[]>;
+  run(sql: string, params?: SqlParams): Promise<{ changes: number }>;
+  insert(sql: string, params?: SqlParams): Promise<number>;
 }
 
-function getDb(): Database.Database {
-  if (!globalThis.__storeDb) {
-    const db = new Database(dbPath);
-    db.pragma("journal_mode = WAL");
-    db.pragma("foreign_keys = ON");
-    globalThis.__storeDb = db;
-    initSchema(db);
-    migrate(db);
-    seedIfEmpty(db);
-  }
-  return globalThis.__storeDb;
+interface Backend extends TxClient {
+  ensure(): Promise<void>;
+  withTx<T>(fn: (tx: TxClient) => Promise<T>): Promise<T>;
 }
+
+/* ------------------------------------------------------------------ */
+/* SQLite backend (local development)                                  */
+/* ------------------------------------------------------------------ */
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   store_name: "NovaDrop",
@@ -323,28 +237,226 @@ const SEED_PRODUCTS: Array<{
   },
 ];
 
-function migrate(db: Database.Database) {
-  const cols = db.prepare("PRAGMA table_info(customers)").all() as Array<{ name: string }>;
-  if (!cols.some((c) => c.name === "country_code")) {
-    db.exec("ALTER TABLE customers ADD COLUMN country_code TEXT DEFAULT ''");
-  }
-  const ocols = db.prepare("PRAGMA table_info(orders)").all() as Array<{ name: string }>;
-  if (!ocols.some((c) => c.name === "supplier_order_id")) {
-    db.exec("ALTER TABLE orders ADD COLUMN supplier_order_id TEXT DEFAULT ''");
-  }
-  const pcols = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
-  if (!pcols.some((c) => c.name === "supplier_data")) {
-    db.exec("ALTER TABLE products ADD COLUMN supplier_data TEXT DEFAULT '{}'");
-  }
-}
+const SQLITE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
 
-function seedIfEmpty(db: Database.Database) {
-  const count = db.prepare("SELECT COUNT(*) AS c FROM products").get() as { c: number };
-  if (count.c > 0) return;
+CREATE TABLE IF NOT EXISTS categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT ''
+);
 
-  const tx = db.transaction(() => {
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  price REAL NOT NULL,
+  compare_at REAL,
+  category_id INTEGER REFERENCES categories(id),
+  images TEXT DEFAULT '[]',
+  stock INTEGER NOT NULL DEFAULT 0,
+  supplier TEXT DEFAULT '',
+  supplier_sku TEXT DEFAULT '',
+  supplier_data TEXT DEFAULT '{}',
+  is_active INTEGER NOT NULL DEFAULT 1,
+  featured INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS customers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT DEFAULT '',
+  country TEXT DEFAULT '',
+  country_code TEXT DEFAULT '',
+  city TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  zip TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id TEXT PRIMARY KEY,
+  customer_id INTEGER REFERENCES customers(id),
+  items TEXT NOT NULL,
+  subtotal REAL NOT NULL,
+  shipping REAL NOT NULL DEFAULT 0,
+  total REAL NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  currency TEXT NOT NULL DEFAULT 'USD',
+  tracking TEXT DEFAULT '',
+  admin_note TEXT DEFAULT '',
+  supplier_order_id TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY,
+  order_id TEXT REFERENCES orders(id),
+  provider TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  amount_usd REAL NOT NULL,
+  amount_crypto REAL NOT NULL,
+  address TEXT DEFAULT '',
+  txid TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  external_id TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS admin_users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  admin_user_id INTEGER NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL
+);
+`;
+
+const PG_SCHEMA = `
+CREATE TABLE IF NOT EXISTS settings (
+  "key" TEXT PRIMARY KEY,
+  value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id SERIAL PRIMARY KEY,
+  slug TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  id SERIAL PRIMARY KEY,
+  slug TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  price DOUBLE PRECISION NOT NULL,
+  compare_at DOUBLE PRECISION,
+  category_id INTEGER REFERENCES categories(id),
+  images TEXT DEFAULT '[]',
+  stock INTEGER NOT NULL DEFAULT 0,
+  supplier TEXT DEFAULT '',
+  supplier_sku TEXT DEFAULT '',
+  supplier_data TEXT DEFAULT '{}',
+  is_active INTEGER NOT NULL DEFAULT 1,
+  featured INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS')),
+  updated_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS'))
+);
+
+CREATE TABLE IF NOT EXISTS customers (
+  id SERIAL PRIMARY KEY,
+  email TEXT NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT DEFAULT '',
+  country TEXT DEFAULT '',
+  country_code TEXT DEFAULT '',
+  city TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  zip TEXT DEFAULT '',
+  created_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS'))
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id TEXT PRIMARY KEY,
+  customer_id INTEGER REFERENCES customers(id),
+  items TEXT NOT NULL,
+  subtotal DOUBLE PRECISION NOT NULL,
+  shipping DOUBLE PRECISION NOT NULL DEFAULT 0,
+  total DOUBLE PRECISION NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  currency TEXT NOT NULL DEFAULT 'USD',
+  tracking TEXT DEFAULT '',
+  admin_note TEXT DEFAULT '',
+  supplier_order_id TEXT DEFAULT '',
+  created_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS')),
+  updated_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS'))
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY,
+  order_id TEXT REFERENCES orders(id),
+  provider TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  amount_usd DOUBLE PRECISION NOT NULL,
+  amount_crypto DOUBLE PRECISION NOT NULL,
+  address TEXT DEFAULT '',
+  txid TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  external_id TEXT DEFAULT '',
+  created_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS')),
+  updated_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS'))
+);
+
+CREATE TABLE IF NOT EXISTS admin_users (
+  id SERIAL PRIMARY KEY,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  admin_user_id INTEGER NOT NULL,
+  created_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS')),
+  expires_at TEXT NOT NULL
+);
+`;
+
+class SqliteBackend implements Backend {
+  private db(): Database.Database {
+    if (!globalThis.__storeDb) {
+      const dataDir = path.join(process.cwd(), "data");
+      fs.mkdirSync(dataDir, { recursive: true });
+      const dbPath = process.env.DATABASE_PATH || path.join(dataDir, "store.db");
+      const db = new Database(dbPath);
+      db.pragma("journal_mode = WAL");
+      db.pragma("foreign_keys = ON");
+      db.exec(SQLITE_SCHEMA);
+      this.migrate(db);
+      this.seedIfEmpty(db);
+      globalThis.__storeDb = db;
+    }
+    return globalThis.__storeDb;
+  }
+
+  private migrate(db: Database.Database) {
+    const cols = db.prepare("PRAGMA table_info(customers)").all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === "country_code")) {
+      db.exec("ALTER TABLE customers ADD COLUMN country_code TEXT DEFAULT ''");
+    }
+    const ocols = db.prepare("PRAGMA table_info(orders)").all() as Array<{ name: string }>;
+    if (!ocols.some((c) => c.name === "supplier_order_id")) {
+      db.exec("ALTER TABLE orders ADD COLUMN supplier_order_id TEXT DEFAULT ''");
+    }
+    const pcols = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
+    if (!pcols.some((c) => c.name === "supplier_data")) {
+      db.exec("ALTER TABLE products ADD COLUMN supplier_data TEXT DEFAULT '{}'");
+    }
+  }
+
+  private seedIfEmpty(db: Database.Database) {
+    const count = db.prepare("SELECT COUNT(*) AS c FROM products").get() as { c: number };
+    if (count.c > 0) return;
+
     const setSetting = db.prepare(
-      "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)"
+      'INSERT OR IGNORE INTO settings ("key", value) VALUES (?, ?)'
     );
     for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
       setSetting.run(k, v);
@@ -386,13 +498,224 @@ function seedIfEmpty(db: Database.Database) {
     const adminCount = db.prepare("SELECT COUNT(*) AS c FROM admin_users").get() as { c: number };
     if (adminCount.c === 0) {
       const hash = bcrypt.hashSync("admin123", 10);
-      db.prepare("INSERT OR IGNORE INTO admin_users (username, password_hash) VALUES (?, ?)").run(
+      db.prepare('INSERT OR IGNORE INTO admin_users (username, password_hash) VALUES (?, ?)').run(
         "admin",
         hash
       );
     }
-  });
-  tx();
+  }
+
+  async ensure(): Promise<void> {
+    this.db();
+  }
+
+  async get(sql: string, params: SqlParams = []): Promise<unknown> {
+    return this.db().prepare(sql).get(...params) ?? undefined;
+  }
+
+  async all(sql: string, params: SqlParams = []): Promise<unknown[]> {
+    return this.db().prepare(sql).all(...params);
+  }
+
+  async run(sql: string, params: SqlParams = []): Promise<{ changes: number }> {
+    const info = this.db().prepare(sql).run(...params);
+    return { changes: info.changes };
+  }
+
+  async insert(sql: string, params: SqlParams = []): Promise<number> {
+    const info = this.db().prepare(sql).run(...params);
+    return Number(info.lastInsertRowid);
+  }
+
+  async withTx<T>(fn: (tx: TxClient) => Promise<T>): Promise<T> {
+    const db = this.db();
+    const tx: TxClient = {
+      get: async (s, p = []) => db.prepare(s).get(...p) ?? undefined,
+      all: async (s, p = []) => db.prepare(s).all(...p),
+      run: async (s, p = []) => ({ changes: db.prepare(s).run(...p).changes }),
+      insert: async (s, p = []) => Number(db.prepare(s).run(...p).lastInsertRowid),
+    };
+    return fn(tx);
+  }
 }
 
-export const db = getDb();
+/* ------------------------------------------------------------------ */
+/* Postgres backend (production / Netlify)                             */
+/* ------------------------------------------------------------------ */
+
+class PgBackend implements Backend {
+  private pool(): pg.Pool {
+    if (!globalThis.__pgPool) {
+      const url = process.env.DATABASE_URL!;
+      globalThis.__pgPool = new pg.Pool({
+        connectionString: url,
+        max: 5,
+        idleTimeoutMillis: 30000,
+        ...(/neon\.tech/.test(url) || url.includes("sslmode=require")
+          ? { ssl: { rejectUnauthorized: false } }
+          : {}),
+      });
+    }
+    return globalThis.__pgPool;
+  }
+
+  /** Adapts shared SQL (SQLite-style) to Postgres. */
+  private toPg(sql: string): string {
+    let n = 0;
+    return sql
+      .replace(/datetime\('now'\)/g, "to_char(now(), 'YYYY-MM-DD HH24:MI:SS')")
+      .replace(/\?/g, () => `$${++n}`);
+  }
+
+  async ensure(): Promise<void> {
+    if (!globalThis.__pgInit) {
+      globalThis.__pgInit = (async () => {
+        const pool = this.pool();
+        await pool.query(PG_SCHEMA);
+        await this.seedIfEmpty(pool);
+      })();
+    }
+    return globalThis.__pgInit;
+  }
+
+  private async seedIfEmpty(pool: pg.Pool) {
+    const count = await pool.query("SELECT COUNT(*) AS c FROM products");
+    if (Number(count.rows[0]?.c ?? 0) > 0) return;
+
+    for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
+      await pool.query(
+        'INSERT INTO settings ("key", value) VALUES ($1, $2) ON CONFLICT ("key") DO NOTHING',
+        [k, v]
+      );
+    }
+
+    const catIds: Record<string, number> = {};
+    for (const c of SEED_CATEGORIES) {
+      await pool.query(
+        "INSERT INTO categories (slug, name, description) VALUES ($1, $2, $3) ON CONFLICT (slug) DO NOTHING",
+        [c.slug, c.name, c.description]
+      );
+      const row = await pool.query("SELECT id FROM categories WHERE slug = $1", [c.slug]);
+      catIds[c.slug] = Number(row.rows[0]?.id ?? 0);
+    }
+
+    for (const p of SEED_PRODUCTS) {
+      const images = JSON.stringify([
+        `https://picsum.photos/seed/${p.slug}/900/900`,
+        `https://picsum.photos/seed/${p.slug}-2/900/900`,
+      ]);
+      await pool.query(
+        `INSERT INTO products (slug, title, description, price, compare_at, category_id, images, stock, supplier, supplier_sku, is_active, featured)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11)
+         ON CONFLICT (slug) DO NOTHING`,
+        [p.slug, p.title, p.description, p.price, p.compare_at, catIds[p.category], images, p.stock, p.supplier, p.supplier_sku, p.featured]
+      );
+    }
+
+    const admin = await pool.query("SELECT COUNT(*) AS c FROM admin_users");
+    if (Number(admin.rows[0]?.c ?? 0) === 0) {
+      const hash = bcrypt.hashSync("admin123", 10);
+      await pool.query("INSERT INTO admin_users (username, password_hash) VALUES ($1, $2)", [
+        "admin",
+        hash,
+      ]);
+    }
+  }
+
+  async get(sql: string, params: SqlParams = []): Promise<unknown> {
+    const res = await this.pool().query(this.toPg(sql), params);
+    return res.rows[0] ?? undefined;
+  }
+
+  async all(sql: string, params: SqlParams = []): Promise<unknown[]> {
+    const res = await this.pool().query(this.toPg(sql), params);
+    return res.rows;
+  }
+
+  async run(sql: string, params: SqlParams = []): Promise<{ changes: number }> {
+    const res = await this.pool().query(this.toPg(sql), params);
+    return { changes: res.rowCount ?? 0 };
+  }
+
+  async insert(sql: string, params: SqlParams = []): Promise<number> {
+    const res = await this.pool().query(this.toPg(sql) + " RETURNING id", params);
+    return Number(res.rows[0]?.id ?? 0);
+  }
+
+  async withTx<T>(fn: (tx: TxClient) => Promise<T>): Promise<T> {
+    const client = await this.pool().connect();
+    try {
+      await client.query("BEGIN");
+      const tx: TxClient = {
+        get: async (s, p = []) => (await client.query(this.toPg(s), p)).rows[0] ?? undefined,
+        all: async (s, p = []) => (await client.query(this.toPg(s), p)).rows,
+        run: async (s, p = []) => ({
+          changes: (await client.query(this.toPg(s), p)).rowCount ?? 0,
+        }),
+        insert: async (s, p = []) =>
+          Number((await client.query(this.toPg(s) + " RETURNING id", p)).rows[0]?.id ?? 0),
+      };
+      const result = await fn(tx);
+      await client.query("COMMIT");
+      return result;
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Facade                                                              */
+/* ------------------------------------------------------------------ */
+
+function getBackend(): Backend {
+  const usePg = !!process.env.DATABASE_URL;
+  return usePg ? new PgBackend() : new SqliteBackend();
+}
+
+export async function ensureDb(): Promise<void> {
+  await getBackend().ensure();
+}
+
+export async function get<T = unknown>(sql: string, params?: SqlParams): Promise<T | undefined> {
+  const b = getBackend();
+  await b.ensure();
+  return (await b.get(sql, params)) as T | undefined;
+}
+
+export async function all<T = unknown>(sql: string, params?: SqlParams): Promise<T[]> {
+  const b = getBackend();
+  await b.ensure();
+  return (await b.all(sql, params)) as T[];
+}
+
+export async function run(
+  sql: string,
+  params?: SqlParams
+): Promise<{ changes: number }> {
+  const b = getBackend();
+  await b.ensure();
+  return b.run(sql, params);
+}
+
+export async function insert(sql: string, params?: SqlParams): Promise<number> {
+  const b = getBackend();
+  await b.ensure();
+  return b.insert(sql, params);
+}
+
+export async function withTx<T>(fn: (tx: TxClient) => Promise<T>): Promise<T> {
+  const b = getBackend();
+  await b.ensure();
+  return b.withTx(fn);
+}
+
+export const db = {
+  get: <T = unknown>(sql: string, params?: SqlParams) => get<T>(sql, params),
+  all: <T = unknown>(sql: string, params?: SqlParams) => all<T>(sql, params),
+  run: (sql: string, params?: SqlParams) => run(sql, params),
+  insert: (sql: string, params?: SqlParams) => insert(sql, params),
+};

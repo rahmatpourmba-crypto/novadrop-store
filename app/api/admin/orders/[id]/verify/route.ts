@@ -17,20 +17,20 @@ export async function POST(
   if (!uid) return unauthorized();
 
   const { id } = await params;
-  const order = getOrder(id);
+  const order = await getOrder(id);
   if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
 
   const body = await req.json();
   const txid = String(body.txid || "").trim();
   if (!txid) return NextResponse.json({ error: "Transaction ID is required." }, { status: 400 });
 
-  const payment = getPaymentForOrder(id);
+  const payment = await getPaymentForOrder(id);
   if (!payment) {
     return NextResponse.json({ error: "No payment found for this order." }, { status: 400 });
   }
 
-  markPaymentPaid(payment.id, txid);
-  updateOrderStatus(id, "paid");
+  await markPaymentPaid(payment.id, txid);
+  await updateOrderStatus(id, "paid");
 
   return NextResponse.json({ ok: true });
 }

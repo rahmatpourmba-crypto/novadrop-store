@@ -40,18 +40,16 @@ export interface CustomerRow {
   created_at: string;
 }
 
-export function getCustomer(id: number): CustomerRow | undefined {
-  return db.prepare("SELECT * FROM customers WHERE id = ?").get(id) as
-    | CustomerRow
-    | undefined;
+export async function getCustomer(id: number): Promise<CustomerRow | undefined> {
+  return db.get<CustomerRow>("SELECT * FROM customers WHERE id = ?", [id]);
 }
 
-export function getOrder(id: string): (OrderRow & { customer?: CustomerRow }) | undefined {
-  const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as
-    | OrderRow
-    | undefined;
+export async function getOrder(
+  id: string
+): Promise<(OrderRow & { customer?: CustomerRow }) | undefined> {
+  const order = await db.get<OrderRow>("SELECT * FROM orders WHERE id = ?", [id]);
   if (!order) return undefined;
-  const customer = getCustomer(order.customer_id);
+  const customer = await getCustomer(order.customer_id);
   return { ...order, customer };
 }
 
@@ -59,28 +57,26 @@ export function getOrderItems(order: OrderRow): OrderItem[] {
   return JSON.parse(order.items) as OrderItem[];
 }
 
-export function getPaymentForOrder(orderId: string) {
-  return db
-    .prepare("SELECT * FROM payments WHERE order_id = ? ORDER BY created_at DESC LIMIT 1")
-    .get(orderId) as
-    | {
-        id: string;
-        order_id: string;
-        provider: string;
-        currency: string;
-        amount_usd: number;
-        amount_crypto: number;
-        address: string;
-        txid: string;
-        status: string;
-        external_id: string;
-        created_at: string;
-        updated_at: string;
-      }
-    | undefined;
+export async function getPaymentForOrder(orderId: string) {
+  return db.get<{
+    id: string;
+    order_id: string;
+    provider: string;
+    currency: string;
+    amount_usd: number;
+    amount_crypto: number;
+    address: string;
+    txid: string;
+    status: string;
+    external_id: string;
+    created_at: string;
+    updated_at: string;
+  }>("SELECT * FROM payments WHERE order_id = ? ORDER BY created_at DESC LIMIT 1", [
+    orderId,
+  ]);
 }
 
-export function createCustomer(input: {
+export async function createCustomer(input: {
   email: string;
   name: string;
   phone: string;
@@ -89,31 +85,31 @@ export function createCustomer(input: {
   city: string;
   address: string;
   zip: string;
-}): number {
-  const existing = db
-    .prepare("SELECT id FROM customers WHERE email = ?")
-    .get(input.email) as { id: number } | undefined;
+}): Promise<number> {
+  const existing = await db.get<{ id: number }>(
+    "SELECT id FROM customers WHERE email = ?",
+    [input.email]
+  );
   if (existing) {
-    db.prepare(
-      `UPDATE customers SET name = ?, phone = ?, country = ?, country_code = ?, city = ?, address = ?, zip = ? WHERE id = ?`
-    ).run(
-      input.name,
-      input.phone,
-      input.country,
-      input.countryCode,
-      input.city,
-      input.address,
-      input.zip,
-      existing.id
+    await db.run(
+      `UPDATE customers SET name = ?, phone = ?, country = ?, country_code = ?, city = ?, address = ?, zip = ? WHERE id = ?`,
+      [
+        input.name,
+        input.phone,
+        input.country,
+        input.countryCode,
+        input.city,
+        input.address,
+        input.zip,
+        existing.id,
+      ]
     );
     return existing.id;
   }
-  const info = db
-    .prepare(
-      `INSERT INTO customers (email, name, phone, country, country_code, city, address, zip)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
+  return db.insert(
+    `INSERT INTO customers (email, name, phone, country, country_code, city, address, zip)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
       input.email,
       input.name,
       input.phone,
@@ -121,12 +117,12 @@ export function createCustomer(input: {
       input.countryCode,
       input.city,
       input.address,
-      input.zip
-    );
-  return Number(info.lastInsertRowid);
+      input.zip,
+    ]
+  );
 }
 
-export function createOrder(input: {
+export async function createOrder(input: {
   id: string;
   customerId: number;
   items: OrderItem[];
@@ -134,35 +130,37 @@ export function createOrder(input: {
   shipping: number;
   total: number;
   currency: string;
-}): void {
-  db.prepare(
+}): Promise<void> {
+  await db.run(
     `INSERT INTO orders (id, customer_id, items, subtotal, shipping, total, status, currency)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`
-  ).run(
-    input.id,
-    input.customerId,
-    JSON.stringify(input.items),
-    input.subtotal,
-    input.shipping,
-    input.total,
-    input.currency
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    [
+      input.id,
+      input.customerId,
+      JSON.stringify(input.items),
+      input.subtotal,
+      input.shipping,
+      input.total,
+      input.currency,
+    ]
   );
 }
 
-export function updateOrderStatus(id: string, status: string) {
-  db.prepare(`UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?`).run(
-    status,
-    id
+export async function updateOrderStatus(id: string, status: string) {
+  await db.run(
+    `UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?`,
+    [status, id]
   );
 }
 
-export function setSupplierOrderId(id: string, supplierOrderId: string) {
-  db.prepare(
-    `UPDATE orders SET supplier_order_id = ?, updated_at = datetime('now') WHERE id = ?`
-  ).run(supplierOrderId, id);
+export async function setSupplierOrderId(id: string, supplierOrderId: string) {
+  await db.run(
+    `UPDATE orders SET supplier_order_id = ?, updated_at = datetime('now') WHERE id = ?`,
+    [supplierOrderId, id]
+  );
 }
 
-export function createPayment(input: {
+export async function createPayment(input: {
   id: string;
   orderId: string;
   provider: string;
@@ -172,54 +170,56 @@ export function createPayment(input: {
   address: string;
   externalId?: string;
 }) {
-  db.prepare(
+  await db.run(
     `INSERT INTO payments (id, order_id, provider, currency, amount_usd, amount_crypto, address, status, external_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
-  ).run(
-    input.id,
-    input.orderId,
-    input.provider,
-    input.currency,
-    input.amountUsd,
-    input.amountCrypto,
-    input.address,
-    input.externalId ?? ""
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    [
+      input.id,
+      input.orderId,
+      input.provider,
+      input.currency,
+      input.amountUsd,
+      input.amountCrypto,
+      input.address,
+      input.externalId ?? "",
+    ]
   );
 }
 
-export function markPaymentPaid(paymentId: string, txid: string) {
-  db.prepare(
-    `UPDATE payments SET status = 'paid', txid = ?, updated_at = datetime('now') WHERE id = ?`
-  ).run(txid, paymentId);
+export async function markPaymentPaid(paymentId: string, txid: string) {
+  await db.run(
+    `UPDATE payments SET status = 'paid', txid = ?, updated_at = datetime('now') WHERE id = ?`,
+    [txid, paymentId]
+  );
 }
 
-export function listOrders(limit = 50): OrderRow[] {
-  return db
-    .prepare("SELECT * FROM orders ORDER BY created_at DESC LIMIT ?")
-    .all(limit) as OrderRow[];
+export async function listOrders(limit = 50): Promise<OrderRow[]> {
+  return db.all<OrderRow>("SELECT * FROM orders ORDER BY created_at DESC LIMIT ?", [limit]);
 }
 
-export function listCustomers(): CustomerRow[] {
-  return db.prepare("SELECT * FROM customers ORDER BY created_at DESC").all() as CustomerRow[];
+export async function listCustomers(): Promise<CustomerRow[]> {
+  return db.all<CustomerRow>("SELECT * FROM customers ORDER BY created_at DESC");
 }
 
-export function orderTotals() {
-  const row = db
-    .prepare(
-      `SELECT
-         COUNT(*) AS order_count,
-         COALESCE(SUM(CASE WHEN status IN ('paid','processing','shipped','delivered') THEN total ELSE 0 END), 0) AS revenue,
-         COALESCE(SUM(CASE WHEN status = 'pending' THEN total ELSE 0 END), 0) AS pending_revenue
-       FROM orders`
-    )
-    .get() as { order_count: number; revenue: number; pending_revenue: number };
-  return row;
+export async function orderTotals() {
+  const row = await db.get<{
+    order_count: number;
+    revenue: number;
+    pending_revenue: number;
+  }>(
+    `SELECT
+       COUNT(*) AS order_count,
+       COALESCE(SUM(CASE WHEN status IN ('paid','processing','shipped','delivered') THEN total ELSE 0 END), 0) AS revenue,
+       COALESCE(SUM(CASE WHEN status = 'pending' THEN total ELSE 0 END), 0) AS pending_revenue
+     FROM orders`
+  );
+  return (
+    row ?? { order_count: 0, revenue: 0, pending_revenue: 0 }
+  );
 }
 
-export function recentOrders(limit = 8): OrderRow[] {
-  return db
-    .prepare("SELECT * FROM orders ORDER BY created_at DESC LIMIT ?")
-    .all(limit) as OrderRow[];
+export async function recentOrders(limit = 8): Promise<OrderRow[]> {
+  return db.all<OrderRow>("SELECT * FROM orders ORDER BY created_at DESC LIMIT ?", [limit]);
 }
 
 export const ORDER_STATUSES = [

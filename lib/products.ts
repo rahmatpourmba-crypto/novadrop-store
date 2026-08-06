@@ -28,11 +28,12 @@ export interface Category {
   description: string;
 }
 
-function hydrate(p: Product): Product {
+async function hydrate(p: Product): Promise<Product> {
   const cat = p.category_id
-    ? (db
-        .prepare("SELECT slug, name FROM categories WHERE id = ?")
-        .get(p.category_id) as { slug: string; name: string } | undefined)
+    ? await db.get<{ slug: string; name: string }>(
+        "SELECT slug, name FROM categories WHERE id = ?",
+        [p.category_id]
+      )
     : undefined;
   return { ...p, category_name: cat?.name, category_slug: cat?.slug };
 }
@@ -51,23 +52,25 @@ export function primaryImage(p: Product): string {
   return imgs[0] || `https://picsum.photos/seed/${p.slug}/900/900`;
 }
 
-export function getProductBySlug(slug: string): Product | undefined {
-  const p = db
-    .prepare("SELECT * FROM products WHERE slug = ? AND is_active = 1")
-    .get(slug) as Product | undefined;
+export async function getProductBySlug(slug: string): Promise<Product | undefined> {
+  const p = await db.get<Product>(
+    "SELECT * FROM products WHERE slug = ? AND is_active = 1",
+    [slug]
+  );
   return p ? hydrate(p) : undefined;
 }
 
-export function getProductById(id: number): Product | undefined {
-  const p = db.prepare("SELECT * FROM products WHERE id = ?").get(id) as
-    | Product
-    | undefined;
+export async function getProductById(id: number): Promise<Product | undefined> {
+  const p = await db.get<Product>("SELECT * FROM products WHERE id = ?", [id]);
   return p ? hydrate(p) : undefined;
 }
 
-export function listProducts(opts?: { category?: string; q?: string }): Product[] {
+export async function listProducts(opts?: {
+  category?: string;
+  q?: string;
+}): Promise<Product[]> {
   let sql = "SELECT * FROM products WHERE is_active = 1";
-  const params: Array<string | number> = [];
+  const params: Array<string | number | null> = [];
   if (opts?.category) {
     sql += " AND category_id = (SELECT id FROM categories WHERE slug = ?)";
     params.push(opts.category);
@@ -77,36 +80,31 @@ export function listProducts(opts?: { category?: string; q?: string }): Product[
     params.push(`%${opts.q}%`, `%${opts.q}%`);
   }
   sql += " ORDER BY featured DESC, created_at DESC";
-  const rows = db.prepare(sql).all(...params) as Product[];
-  return rows.map(hydrate);
+  const rows = await db.all<Product>(sql, params);
+  return Promise.all(rows.map(hydrate));
 }
 
-export function listFeatured(): Product[] {
-  const rows = db
-    .prepare("SELECT * FROM products WHERE is_active = 1 AND featured = 1 ORDER BY id DESC LIMIT 8")
-    .all() as Product[];
-  return rows.map(hydrate);
+export async function listFeatured(): Promise<Product[]> {
+  const rows = await db.all<Product>(
+    "SELECT * FROM products WHERE is_active = 1 AND featured = 1 ORDER BY id DESC LIMIT 8"
+  );
+  return Promise.all(rows.map(hydrate));
 }
 
-export function listCategories(): Category[] {
-  return db
-    .prepare(
-      `SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = 1) AS product_count
-       FROM categories c ORDER BY c.name`
-    )
-    .all() as Category[];
+export async function listCategories(): Promise<Category[]> {
+  return db.all<Category>(
+    `SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = 1) AS product_count
+     FROM categories c ORDER BY c.name`
+  );
 }
 
-export function getCategoryBySlug(slug: string): Category | undefined {
-  return db.prepare("SELECT * FROM categories WHERE slug = ?").get(slug) as
-    | Category
-    | undefined;
+export async function getCategoryBySlug(slug: string): Promise<Category | undefined> {
+  return db.get<Category>("SELECT * FROM categories WHERE slug = ?", [slug]);
 }
 
-export function productCount(): number {
-  return (
-    db.prepare("SELECT COUNT(*) AS c FROM products WHERE is_active = 1").get() as {
-      c: number;
-    }
-  ).c;
+export async function productCount(): Promise<number> {
+  const row = await db.get<{ c: number }>(
+    "SELECT COUNT(*) AS c FROM products WHERE is_active = 1"
+  );
+  return row?.c ?? 0;
 }

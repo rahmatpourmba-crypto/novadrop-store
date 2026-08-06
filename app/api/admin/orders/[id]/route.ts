@@ -16,9 +16,7 @@ export async function PATCH(
   if (!uid) return unauthorized();
 
   const { id } = await params;
-  const existing = db.prepare("SELECT id FROM orders WHERE id = ?").get(id) as
-    | { id: string }
-    | undefined;
+  const existing = await db.get<{ id: string }>("SELECT id FROM orders WHERE id = ?", [id]);
   if (!existing) return NextResponse.json({ error: "Order not found." }, { status: 404 });
 
   const body = await req.json();
@@ -26,16 +24,16 @@ export async function PATCH(
   const tracking = String(body.tracking ?? "");
 
   if (status) {
-    db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?").run(
+    await db.run("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?", [
       status,
-      id
-    );
+      id,
+    ]);
   }
   if (body.tracking !== undefined) {
-    db.prepare("UPDATE orders SET tracking = ?, updated_at = datetime('now') WHERE id = ?").run(
+    await db.run("UPDATE orders SET tracking = ?, updated_at = datetime('now') WHERE id = ?", [
       tracking,
-      id
-    );
+      id,
+    ]);
   }
 
   return NextResponse.json({ ok: true });
