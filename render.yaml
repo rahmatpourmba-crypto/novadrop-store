@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: novadrop-store
+    runtime: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: DATABASE_PATH
+        value: /var/data/store.db
+    disk:
+      name: store-data
+      mountPath: /var/data
+      sizeGB: 1
