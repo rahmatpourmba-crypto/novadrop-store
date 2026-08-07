@@ -17,7 +17,21 @@ export interface ProductFormData {
   supplier_sku: string;
   is_active: boolean;
   featured: boolean;
+  translations?: Record<string, { title?: string; description?: string }>;
 }
+
+const TRANSLATION_LANGS: Array<{ code: string; name: string }> = [
+  { code: "en", name: "English" },
+  { code: "fa", name: "فارسی" },
+  { code: "ar", name: "العربية" },
+  { code: "ckb", name: "کوردی سۆرانی" },
+  { code: "es", name: "Español" },
+  { code: "fr", name: "Français" },
+  { code: "de", name: "Deutsch" },
+  { code: "ru", name: "Русский" },
+  { code: "tr", name: "Türkçe" },
+  { code: "zh", name: "中文" },
+];
 
 const EMPTY: ProductFormData = {
   slug: "",
@@ -32,6 +46,7 @@ const EMPTY: ProductFormData = {
   supplier_sku: "",
   is_active: true,
   featured: false,
+  translations: {},
 };
 
 export default function ProductForm({
@@ -47,11 +62,22 @@ export default function ProductForm({
       ? { ...initial, images: initial.images.length ? initial.images : [""] }
       : EMPTY
   );
+  const [activeLang, setActiveLang] = useState("fa");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const set = (k: keyof ProductFormData, v: string | boolean) =>
     setForm((f) => ({ ...f, [k]: v }));
+
+  function setTranslation(lang: string, field: "title" | "description", value: string) {
+    setForm((f) => ({
+      ...f,
+      translations: {
+        ...f.translations,
+        [lang]: { ...f.translations?.[lang], [field]: value },
+      },
+    }));
+  }
 
   function setImage(i: number, value: string) {
     const images = [...form.images];
@@ -185,6 +211,54 @@ export default function ProductForm({
             >
               + Add image
             </button>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-6">
+          <h2 className="mb-4 font-bold">Translations</h2>
+          <p className="mb-3 text-xs text-gray-500">
+            Translated title &amp; description shown to visitors in each language. Empty fields fall back to the English title/description.
+          </p>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {TRANSLATION_LANGS.map((l) => (
+              <button
+                key={l.code}
+                type="button"
+                onClick={() => setActiveLang(l.code)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  activeLang === l.code
+                    ? "bg-gray-900 text-white"
+                    : "border border-gray-300 text-gray-600 hover:border-gray-900"
+                }`}
+              >
+                {l.name}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Title ({TRANSLATION_LANGS.find((l) => l.code === activeLang)?.name})
+              </label>
+              <input
+                value={form.translations?.[activeLang]?.title ?? ""}
+                onChange={(e) => setTranslation(activeLang, "title", e.target.value)}
+                className={inputCls}
+                placeholder={`${form.title || "English title"}…`}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Description ({TRANSLATION_LANGS.find((l) => l.code === activeLang)?.name})
+              </label>
+              <textarea
+                value={form.translations?.[activeLang]?.description ?? ""}
+                onChange={(e) => setTranslation(activeLang, "description", e.target.value)}
+                rows={5}
+                className={inputCls}
+                placeholder="Translated description…"
+              />
+            </div>
           </div>
         </div>
       </div>

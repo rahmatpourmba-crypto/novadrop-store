@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { getProductById, imagesOf, listCategories } from "@/lib/products";
+import { getProductById, imagesOf, listCategories, parseTranslations } from "@/lib/products";
 import ProductForm from "../../../components/ProductForm";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +36,7 @@ export default async function EditProductPage({
           supplier_sku: product.supplier_sku,
           is_active: !!product.is_active,
           featured: !!product.featured,
+          translations: parseTranslations(product),
         }}
       />
     </div>

@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { listFeatured, listCategories } from "@/lib/products";
 import { getSettings } from "@/lib/settings";
+import { getT } from "@/lib/i18n/server";
 import ProductCard from "./components/ProductCard";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [featured, categories, s] = await Promise.all([
+  const [featured, categories, s, t] = await Promise.all([
     listFeatured(),
     listCategories(),
     getSettings(),
+    getT(),
   ]);
 
   return (
@@ -19,49 +21,48 @@ export default async function HomePage() {
           <div>
             <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-600">
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Ships worldwide · Crypto friendly
+              {t("store.hero.badge")}
             </p>
             <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
               {s.store_name || "NovaDrop"}
             </h1>
             <p className="mt-4 text-lg text-gray-600">
-              {s.store_tagline ||
-                "Trending dropshipping products delivered to your door. Pay safely with cryptocurrency."}
+              {s.store_tagline || t("store.hero.heroFallback")}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 href="/shop"
                 className="rounded-lg bg-gray-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-gray-700"
               >
-                Shop now
+                {t("store.hero.shopNow")}
               </Link>
               <Link
                 href="#how"
                 className="rounded-lg border border-gray-300 px-6 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
               >
-                How it works
+                {t("store.hero.howItWorks")}
               </Link>
             </div>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500">
-              <span>✔ Fast global shipping</span>
-              <span>✔ 7-day returns</span>
-              <span>✔ BTC · ETH · USDT · LTC</span>
+              <span>✔ {t("store.hero.fastShipping")}</span>
+              <span>✔ {t("store.hero.returns7")}</span>
+              <span>✔ {t("store.hero.payMethods")}</span>
             </div>
           </div>
           <div className="hidden lg:block">
             <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-xl">
               <div className="mb-4 flex items-center justify-between">
-                <span className="text-sm font-semibold">Pay with crypto</span>
+                <span className="text-sm font-semibold">{t("store.hero.payWithCrypto")}</span>
                 <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                  Secure
+                  {t("store.hero.secure")}
                 </span>
               </div>
               <div className="space-y-3">
                 {[
-                  { sym: "₿", name: "Bitcoin", note: "BTC" },
-                  { sym: "Ξ", name: "Ethereum", note: "ETH" },
-                  { sym: "₮", name: "Tether", note: "USDT (TRC-20)" },
-                  { sym: "Ł", name: "Litecoin", note: "LTC" },
+                  { sym: "₿", name: t("store.hero.bitcoin"), note: "BTC" },
+                  { sym: "Ξ", name: t("store.hero.ethereum"), note: "ETH" },
+                  { sym: "₮", name: t("store.hero.tether"), note: "USDT (TRC-20)" },
+                  { sym: "Ł", name: t("store.hero.litecoin"), note: "LTC" },
                 ].map((c) => (
                   <div
                     key={c.name}
@@ -83,7 +84,7 @@ export default async function HomePage() {
                 ))}
               </div>
               <p className="mt-4 text-center text-xs text-gray-400">
-                Instant order confirmation · No account needed
+                {t("store.hero.instantConfirm")} · {t("store.hero.noAccount")}
               </p>
             </div>
           </div>
@@ -93,11 +94,11 @@ export default async function HomePage() {
       <section className="mx-auto max-w-6xl px-4 py-14">
         <div className="mb-8 flex items-end justify-between">
           <div>
-            <h2 className="text-2xl font-bold">Featured products</h2>
-            <p className="mt-1 text-sm text-gray-500">Hand-picked bestsellers</p>
+            <h2 className="text-2xl font-bold">{t("store.featured.title")}</h2>
+            <p className="mt-1 text-sm text-gray-500">{t("store.featured.subtitle")}</p>
           </div>
           <Link href="/shop" className="text-sm font-semibold text-gray-900 hover:underline">
-            View all →
+            {t("store.footer.allProducts")} →
           </Link>
         </div>
         <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
@@ -109,7 +110,7 @@ export default async function HomePage() {
 
       <section className="border-y border-gray-200 bg-gray-50">
         <div className="mx-auto max-w-6xl px-4 py-14">
-          <h2 className="mb-8 text-2xl font-bold">Shop by category</h2>
+          <h2 className="mb-8 text-2xl font-bold">{t("store.categories.title")}</h2>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {categories.map((c) => (
               <Link
@@ -127,19 +128,19 @@ export default async function HomePage() {
       </section>
 
       <section id="how" className="mx-auto max-w-6xl px-4 py-14">
-        <h2 className="mb-8 text-center text-2xl font-bold">How it works</h2>
+        <h2 className="mb-8 text-center text-2xl font-bold">{t("store.how.title")}</h2>
         <div className="grid gap-6 md:grid-cols-3">
           {[
-            { n: "1", t: "Pick your products", d: "Browse trending products from around the world and add them to your cart." },
-            { n: "2", t: "Pay with crypto", d: "Check out and pay with Bitcoin, Ethereum, USDT or Litecoin. No bank card needed." },
-            { n: "3", t: "Track your delivery", d: "We ship from our global warehouses and keep you updated with tracking." },
+            { n: "1", tt: t("store.how.step1t"), dd: t("store.how.step1d") },
+            { n: "2", tt: t("store.how.step2t"), dd: t("store.how.step2d") },
+            { n: "3", tt: t("store.how.step3t"), dd: t("store.how.step3d") },
           ].map((step) => (
             <div key={step.n} className="rounded-2xl border border-gray-200 p-6">
               <div className="grid h-10 w-10 place-items-center rounded-full bg-gray-900 font-bold text-white">
                 {step.n}
               </div>
-              <div className="mt-4 font-semibold">{step.t}</div>
-              <div className="mt-1 text-sm text-gray-500">{step.d}</div>
+              <div className="mt-4 font-semibold">{step.tt}</div>
+              <div className="mt-1 text-sm text-gray-500">{step.dd}</div>
             </div>
           ))}
         </div>

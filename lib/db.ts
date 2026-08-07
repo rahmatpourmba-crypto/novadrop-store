@@ -263,6 +263,7 @@ CREATE TABLE IF NOT EXISTS products (
   supplier TEXT DEFAULT '',
   supplier_sku TEXT DEFAULT '',
   supplier_data TEXT DEFAULT '{}',
+  translations TEXT DEFAULT '{}',
   is_active INTEGER NOT NULL DEFAULT 1,
   featured INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
@@ -354,6 +355,7 @@ CREATE TABLE IF NOT EXISTS products (
   supplier TEXT DEFAULT '',
   supplier_sku TEXT DEFAULT '',
   supplier_data TEXT DEFAULT '{}',
+  translations TEXT DEFAULT '{}',
   is_active INTEGER NOT NULL DEFAULT 1,
   featured INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS')),
@@ -448,6 +450,9 @@ class SqliteBackend implements Backend {
     const pcols = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
     if (!pcols.some((c) => c.name === "supplier_data")) {
       db.exec("ALTER TABLE products ADD COLUMN supplier_data TEXT DEFAULT '{}'");
+    }
+    if (!pcols.some((c) => c.name === "translations")) {
+      db.exec("ALTER TABLE products ADD COLUMN translations TEXT DEFAULT '{}'");
     }
   }
 
@@ -572,10 +577,21 @@ class PgBackend implements Backend {
       globalThis.__pgInit = (async () => {
         const pool = this.pool();
         await pool.query(PG_SCHEMA);
+        await this.migrate(pool);
         await this.seedIfEmpty(pool);
       })();
     }
     return globalThis.__pgInit;
+  }
+
+  private async migrate(pool: pg.Pool) {
+    const cols = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'products' AND column_name = 'translations'`
+    );
+    if (cols.rowCount === 0) {
+      await pool.query("ALTER TABLE products ADD COLUMN translations TEXT DEFAULT '{}'");
+    }
   }
 
   private async seedIfEmpty(pool: pg.Pool) {

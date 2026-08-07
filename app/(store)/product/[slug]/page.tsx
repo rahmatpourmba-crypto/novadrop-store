@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getProductBySlug, imagesOf } from "@/lib/products";
+import { getProductBySlug, imagesOf, translateProduct } from "@/lib/products";
 import { formatPrice } from "@/lib/utils";
+import { getLang, getT } from "@/lib/i18n/server";
 import ProductBuyBox from "../../components/ProductBuyBox";
 import ProductCard from "../../components/ProductCard";
 import { listProducts } from "@/lib/products";
@@ -15,11 +16,12 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const product = await getProductBySlug(slug);
+  const [product, lang] = await Promise.all([getProductBySlug(slug), getLang()]);
   if (!product) return { title: "Product not found" };
+  const local = translateProduct(product, lang);
   return {
-    title: `${product.title} — NovaDrop`,
-    description: product.description.slice(0, 160),
+    title: `${local.title} — NovaDrop`,
+    description: local.description.slice(0, 160),
   };
 }
 
@@ -29,8 +31,13 @@ export default async function ProductPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = await getProductBySlug(slug);
+  const [product, lang, t] = await Promise.all([
+    getProductBySlug(slug),
+    getLang(),
+    getT(),
+  ]);
   if (!product) notFound();
+  const local = translateProduct(product, lang);
 
   const images = imagesOf(product);
   const mainImg = images[0] || `https://picsum.photos/seed/${product.slug}/900/900`;
@@ -46,9 +53,9 @@ export default async function ProductPage({
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <nav className="mb-6 text-sm text-gray-500">
-        <Link href="/" className="hover:text-gray-900">Home</Link>
+        <Link href="/" className="hover:text-gray-900">{t("store.nav.home")}</Link>
         <span className="mx-2">/</span>
-        <Link href="/shop" className="hover:text-gray-900">Shop</Link>
+        <Link href="/shop" className="hover:text-gray-900">{t("store.nav.shop")}</Link>
         {product.category_name && (
           <>
             <span className="mx-2">/</span>
@@ -63,7 +70,7 @@ export default async function ProductPage({
         <div>
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={mainImg} alt={product.title} className="aspect-square w-full object-cover" />
+            <img src={mainImg} alt={local.title} className="aspect-square w-full object-cover" />
           </div>
           {images.length > 1 && (
             <div className="mt-3 flex gap-3">
@@ -86,7 +93,7 @@ export default async function ProductPage({
               {product.category_name}
             </span>
           )}
-          <h1 className="mt-1 text-3xl font-bold">{product.title}</h1>
+          <h1 className="mt-1 text-3xl font-bold">{local.title}</h1>
 
           <div className="mt-4 flex items-baseline gap-3">
             <span className="text-3xl font-extrabold">{formatPrice(product.price)}</span>
@@ -109,7 +116,7 @@ export default async function ProductPage({
           <ProductBuyBox
             productId={product.id}
             slug={product.slug}
-            title={product.title}
+            title={local.title}
             price={product.price}
             image={mainImg}
             stock={product.stock}
@@ -128,9 +135,9 @@ export default async function ProductPage({
           </div>
 
           <div className="mt-8">
-            <h2 className="mb-2 font-semibold">Description</h2>
+            <h2 className="mb-2 font-semibold">{t("store.product.description")}</h2>
             <div className="whitespace-pre-line text-sm leading-6 text-gray-600">
-              {product.description}
+              {local.description}
             </div>
           </div>
         </div>
@@ -138,7 +145,7 @@ export default async function ProductPage({
 
       {related.length > 0 && (
         <div className="mt-16">
-          <h2 className="mb-6 text-2xl font-bold">You may also like</h2>
+          <h2 className="mb-6 text-2xl font-bold">{t("store.product.similar")}</h2>
           <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
             {related.map((p) => (
               <ProductCard key={p.id} product={p} />

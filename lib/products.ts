@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { languages, type Lang } from "./i18n/core";
 
 export interface Product {
   id: number;
@@ -13,6 +14,7 @@ export interface Product {
   supplier: string;
   supplier_sku: string;
   supplier_data: string;
+  translations: string;
   is_active: number;
   featured: number;
   created_at: string;
@@ -26,6 +28,36 @@ export interface Category {
   slug: string;
   name: string;
   description: string;
+}
+
+export type ProductTranslations = Record<
+  string,
+  { title?: string; description?: string }
+>;
+
+export function parseTranslations(p: { translations?: string | null }): ProductTranslations {
+  if (!p.translations) return {};
+  try {
+    const parsed = JSON.parse(p.translations);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function translateProduct(
+  p: Pick<Product, "title" | "description" | "translations">,
+  lang: Lang
+): { title: string; description: string } {
+  const t = parseTranslations(p)[lang];
+  return {
+    title: t?.title?.trim() || p.title,
+    description: t?.description?.trim() || p.description,
+  };
+}
+
+export function supportedLangs(): Lang[] {
+  return languages.map((l) => l.code as Lang);
 }
 
 async function hydrate(p: Product): Promise<Product> {

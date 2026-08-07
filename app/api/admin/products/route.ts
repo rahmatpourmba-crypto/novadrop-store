@@ -29,10 +29,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid price." }, { status: 400 });
     }
 
+    const translations: Record<string, { title?: string; description?: string }> = {};
+    if (body.translations && typeof body.translations === "object") {
+      for (const [code, t] of Object.entries(body.translations as Record<string, unknown>)) {
+        if (t && typeof t === "object") {
+          const tt = t as { title?: unknown; description?: unknown };
+          translations[code] = {
+            title: typeof tt.title === "string" ? tt.title.trim() : "",
+            description: typeof tt.description === "string" ? tt.description.trim() : "",
+          };
+        }
+      }
+    }
+
     const id = await db.insert(
       `INSERT INTO products
-       (slug, title, description, price, compare_at, category_id, images, stock, supplier, supplier_sku, supplier_data, is_active, featured)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (slug, title, description, price, compare_at, category_id, images, stock, supplier, supplier_sku, supplier_data, translations, is_active, featured)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         slug,
         title,
@@ -45,6 +58,7 @@ export async function POST(req: Request) {
         String(body.supplier || ""),
         String(body.supplier_sku || ""),
         String(body.supplier_data || "{}"),
+        JSON.stringify(translations),
         body.is_active === false ? 0 : 1,
         body.featured ? 1 : 0,
       ]

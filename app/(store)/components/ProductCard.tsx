@@ -1,9 +1,12 @@
 import Link from "next/link";
-import { primaryImage, type Product } from "@/lib/products";
+import { primaryImage, translateProduct, type Product } from "@/lib/products";
 import { formatPrice } from "@/lib/utils";
+import { getLang } from "@/lib/i18n/server";
 import AddToCartButton from "./AddToCartButton";
 
-export default function ProductCard({ product }: { product: Product }) {
+export default async function ProductCard({ product }: { product: Product }) {
+  const lang = await getLang();
+  const local = translateProduct(product, lang);
   const img = primaryImage(product);
   const discount =
     product.compare_at && product.compare_at > product.price
@@ -16,7 +19,7 @@ export default function ProductCard({ product }: { product: Product }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={img}
-          alt={product.title}
+          alt={local.title}
           className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           loading="lazy"
         />
@@ -33,7 +36,7 @@ export default function ProductCard({ product }: { product: Product }) {
           </span>
         )}
         <Link href={`/product/${product.slug}`} className="line-clamp-2 min-h-10 text-sm font-semibold hover:text-gray-600">
-          {product.title}
+          {local.title}
         </Link>
         <div className="mt-auto flex items-baseline gap-2">
           <span className="text-lg font-bold">{formatPrice(product.price)}</span>
@@ -46,7 +49,7 @@ export default function ProductCard({ product }: { product: Product }) {
         <AddToCartButton
           productId={product.id}
           slug={product.slug}
-          title={product.title}
+          title={local.title}
           price={product.price}
           image={img}
           stock={product.stock}

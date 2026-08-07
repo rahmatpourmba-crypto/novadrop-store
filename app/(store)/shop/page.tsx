@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listProducts, listCategories, getCategoryBySlug } from "@/lib/products";
+import { getLang, getT } from "@/lib/i18n/server";
 import ProductCard from "../components/ProductCard";
 
 export const dynamic = "force-dynamic";
@@ -13,18 +14,24 @@ export default async function ShopPage({
   const category = params.category || "";
   const q = params.q || "";
 
-  const products = await listProducts({ category, q });
-  const categories = await listCategories();
-  const activeCat = category ? await getCategoryBySlug(category) : undefined;
+  const [products, categories, activeCat, lang, t] = await Promise.all([
+    listProducts({ category, q }),
+    listCategories(),
+    category ? getCategoryBySlug(category) : Promise.resolve(undefined),
+    getLang(),
+    getT(),
+  ]);
+  void lang;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-3xl font-bold">
-        {activeCat ? activeCat.name : "All products"}
+        {activeCat ? activeCat.name : t("store.shop.allProducts")}
       </h1>
       <p className="mt-1 text-sm text-gray-500">
-        {products.length} product{products.length === 1 ? "" : "s"}
-        {q ? ` for “${q}”` : ""}
+        {q
+          ? t("store.shop.resultsFor", { count: products.length, q })
+          : t("store.shop.results", { count: products.length })}
       </p>
 
       <form method="GET" action="/shop" className="mt-6 flex max-w-md gap-2">
@@ -32,14 +39,14 @@ export default async function ShopPage({
           type="text"
           name="q"
           defaultValue={q}
-          placeholder="Search products…"
+          placeholder={t("store.shop.searchPlaceholder")}
           className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-gray-900"
         />
         <button
           type="submit"
           className="rounded-lg bg-gray-900 px-5 py-2 text-sm font-semibold text-white hover:bg-gray-700"
         >
-          Search
+          {t("store.shop.searchBtn")}
         </button>
       </form>
 
@@ -50,7 +57,7 @@ export default async function ShopPage({
             !category ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300 text-gray-600 hover:border-gray-900"
           }`}
         >
-          All
+          {t("store.shop.allFilter")}
         </Link>
         {categories.map((c) => (
           <Link
@@ -67,7 +74,7 @@ export default async function ShopPage({
 
       {products.length === 0 ? (
         <div className="mt-16 rounded-2xl border border-dashed border-gray-300 p-16 text-center text-gray-500">
-          No products found. Try a different search.
+          {t("store.shop.noProducts")}
         </div>
       ) : (
         <div className="mt-8 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
