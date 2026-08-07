@@ -96,6 +96,7 @@ export async function searchProducts(keyword: string, page = 1, size = 12): Prom
 }
 
 export interface CjVariant {
+  pid?: string;
   vid: string;
   variantSku: string;
   variantNameEn: string;
@@ -114,23 +115,34 @@ export interface CjProductDetail {
   variants: CjVariant[];
 }
 
-export async function getVariants(pid: string): Promise<CjProductDetail> {
+function toDetail(rows: CjVariant[]): CjProductDetail | null {
+  const first = rows[0];
+  if (!first) return null;
+  return {
+    pid: String(first.pid ?? ""),
+    productNameEn: first.variantNameEn ?? "",
+    productImage: first.variantImage ?? "",
+    variants: rows,
+  };
+}
+
+export async function getVariants(pid: string): Promise<CjProductDetail | null> {
   const cfg = await getCjConfig();
   const token = await getAccessToken(cfg.apiKey);
-  const data = await request<CjProductDetail>(`/product/variant/query?pid=${encodeURIComponent(pid)}`, {
+  const data = await request<CjVariant[]>(`/product/variant/query?pid=${encodeURIComponent(pid)}`, {
     token,
   });
-  return data;
+  return toDetail(Array.isArray(data) ? data : []);
 }
 
 export async function getVariantBySku(variantSku: string): Promise<CjProductDetail | null> {
   const cfg = await getCjConfig();
   const token = await getAccessToken(cfg.apiKey);
-  const data = await request<CjProductDetail>(
+  const data = await request<CjVariant[]>(
     `/product/variant/query?variantSku=${encodeURIComponent(variantSku)}`,
     { token }
   );
-  return data?.pid ? data : null;
+  return toDetail(Array.isArray(data) ? data : []);
 }
 
 export interface CjFreightOption {
