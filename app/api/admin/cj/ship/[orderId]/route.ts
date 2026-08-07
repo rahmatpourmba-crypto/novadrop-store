@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/session";
-import { getOrder, getOrderItems, getCustomer, setSupplierOrderId, updateOrderStatus } from "@/lib/orders";
+import { getOrder, getOrderItems, getCustomer, setSupplierOrderId, setSupplierCost, updateOrderStatus } from "@/lib/orders";
 import { getSettings } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { createOrder, freightCalculate, getCjConfig, getVariantBySku } from "@/lib/cj";
@@ -101,6 +101,11 @@ export async function POST(
     });
 
     await setSupplierOrderId(orderId, result.orderId);
+    const productCost = parseFloat(result.productAmount ?? "") || 0;
+    const postageCost = parseFloat(result.postageAmount ?? "") || 0;
+    if (productCost + postageCost > 0) {
+      await setSupplierCost(orderId, Math.round((productCost + postageCost) * 100) / 100);
+    }
     if (order.status === "paid" || order.status === "pending") {
       await updateOrderStatus(orderId, "processing");
     }

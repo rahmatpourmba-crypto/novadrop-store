@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { recentOrders, orderTotals, getCustomer } from "@/lib/orders";
+import { recentOrders, orderTotals, getCustomer, orderProfit } from "@/lib/orders";
 import { formatPrice, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -35,9 +35,17 @@ export default async function AdminDashboardPage() {
     customers.filter((c) => !!c).map((c) => [c!.id, c!])
   );
 
+  const shipped = await db.all<{ total: number; supplier_cost: number | null }>(
+    "SELECT total, supplier_cost FROM orders WHERE supplier_cost IS NOT NULL"
+  );
+  const netProfit = shipped.reduce((s, o) => s + (orderProfit(o) ?? 0), 0);
+  const supplierSpent = shipped.reduce((s, o) => s + (o.supplier_cost ?? 0), 0);
+
   const cards = [
     { label: "Total orders", value: String(totals.order_count), color: "bg-gray-900" },
     { label: "Confirmed revenue", value: formatPrice(totals.revenue), color: "bg-emerald-600" },
+    { label: "Net profit", value: formatPrice(netProfit), color: "bg-indigo-600" },
+    { label: "Spent on CJ", value: formatPrice(supplierSpent), color: "bg-rose-600" },
     { label: "Awaiting payment", value: formatPrice(totals.pending_revenue), color: "bg-amber-500" },
   ];
 
@@ -46,7 +54,7 @@ export default async function AdminDashboardPage() {
       <h1 className="text-2xl font-bold">Dashboard</h1>
       <p className="mt-1 text-sm text-gray-500">Overview of your store</p>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {cards.map((c) => (
           <div key={c.label} className="rounded-2xl border border-gray-200 bg-white p-5">
             <div className={`inline-flex rounded-lg ${c.color} px-2.5 py-1 text-xs font-bold text-white`}>
@@ -96,6 +104,7 @@ export default async function AdminDashboardPage() {
                   <th className="px-4 py-3">Order</th>
                   <th className="px-4 py-3">Customer</th>
                   <th className="px-4 py-3">Total</th>
+                  <th className="px-4 py-3">Profit</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Date</th>
                 </tr>
@@ -113,6 +122,18 @@ export default async function AdminDashboardPage() {
                       <td className="px-4 py-3 text-gray-600">{customer?.name ?? "-"}</td>
                       <td className="px-4 py-3 font-semibold">{formatPrice(o.total)}</td>
                       <td className="px-4 py-3">
+                        {(() => {
+                          const profit = orderProfit(o);
+                          return profit == null ? (
+                            <span className="text-gray-400">—</span>
+                          ) : (
+                            <span className={`font-semibold ${profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {formatPrice(profit)}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-4 py-3">
                         <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase ${
                           o.status === "delivered" ? "bg-emerald-100 text-emerald-700"
                           : o.status === "pending" ? "bg-amber-100 text-amber-700"
@@ -127,7 +148,7 @@ export default async function AdminDashboardPage() {
                 })}
                 {orders.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
                       No orders yet.
                     </td>
                   </tr>

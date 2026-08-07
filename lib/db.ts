@@ -295,6 +295,7 @@ CREATE TABLE IF NOT EXISTS orders (
   tracking TEXT DEFAULT '',
   admin_note TEXT DEFAULT '',
   supplier_order_id TEXT DEFAULT '',
+  supplier_cost REAL,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -387,6 +388,7 @@ CREATE TABLE IF NOT EXISTS orders (
   tracking TEXT DEFAULT '',
   admin_note TEXT DEFAULT '',
   supplier_order_id TEXT DEFAULT '',
+  supplier_cost DOUBLE PRECISION,
   created_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS')),
   updated_at TEXT DEFAULT (to_char(now(), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -446,6 +448,9 @@ class SqliteBackend implements Backend {
     const ocols = db.prepare("PRAGMA table_info(orders)").all() as Array<{ name: string }>;
     if (!ocols.some((c) => c.name === "supplier_order_id")) {
       db.exec("ALTER TABLE orders ADD COLUMN supplier_order_id TEXT DEFAULT ''");
+    }
+    if (!ocols.some((c) => c.name === "supplier_cost")) {
+      db.exec("ALTER TABLE orders ADD COLUMN supplier_cost REAL");
     }
     const pcols = db.prepare("PRAGMA table_info(products)").all() as Array<{ name: string }>;
     if (!pcols.some((c) => c.name === "supplier_data")) {
@@ -591,6 +596,13 @@ class PgBackend implements Backend {
     );
     if (cols.rowCount === 0) {
       await pool.query("ALTER TABLE products ADD COLUMN translations TEXT DEFAULT '{}'");
+    }
+    const orderCols = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'orders' AND column_name = 'supplier_cost'`
+    );
+    if (orderCols.rowCount === 0) {
+      await pool.query("ALTER TABLE orders ADD COLUMN supplier_cost DOUBLE PRECISION");
     }
   }
 

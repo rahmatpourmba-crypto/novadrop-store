@@ -12,6 +12,7 @@ export interface OrderRow {
   tracking: string;
   admin_note: string;
   supplier_order_id: string;
+  supplier_cost: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -158,6 +159,20 @@ export async function setSupplierOrderId(id: string, supplierOrderId: string) {
     `UPDATE orders SET supplier_order_id = ?, updated_at = datetime('now') WHERE id = ?`,
     [supplierOrderId, id]
   );
+}
+
+export async function setSupplierCost(id: string, cost: number) {
+  await db.run(
+    `UPDATE orders SET supplier_cost = ?, updated_at = datetime('now') WHERE id = ?`,
+    [cost, id]
+  );
+}
+
+export function orderProfit(o: {
+  total: number;
+  supplier_cost: number | null;
+}): number | null {
+  return o.supplier_cost == null ? null : o.total - o.supplier_cost;
 }
 
 export async function createPayment(input: {

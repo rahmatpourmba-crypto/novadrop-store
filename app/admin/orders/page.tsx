@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listOrders, getCustomer, getPaymentForOrder } from "@/lib/orders";
+import { listOrders, getCustomer, getPaymentForOrder, orderProfit } from "@/lib/orders";
 import { formatPrice, formatDate } from "@/lib/utils";
 import ExportOrdersButton from "../components/ExportOrdersButton";
 
@@ -37,6 +37,7 @@ export default async function AdminOrdersPage() {
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Items</th>
               <th className="px-4 py-3">Total</th>
+              <th className="px-4 py-3">Profit</th>
               <th className="px-4 py-3">Payment</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Date</th>
@@ -61,6 +62,18 @@ export default async function AdminOrdersPage() {
                   </td>
                   <td className="px-4 py-3">{itemCount}</td>
                   <td className="px-4 py-3 font-semibold">{formatPrice(o.total)}</td>
+                  <td className="px-4 py-3">
+                    {(() => {
+                      const profit = orderProfit(o);
+                      return profit == null ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        <span className={`font-semibold ${profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {formatPrice(profit)}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="px-4 py-3">
                     {payment ? (
                       <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase ${
@@ -90,7 +103,7 @@ export default async function AdminOrdersPage() {
             })}
             {orders.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
                   No orders yet.
                 </td>
               </tr>

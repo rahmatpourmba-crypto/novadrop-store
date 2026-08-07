@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getOrder, getOrderItems, getPaymentForOrder, getCustomer } from "@/lib/orders";
+import { getOrder, getOrderItems, getPaymentForOrder, getCustomer, orderProfit } from "@/lib/orders";
 import { getSettings } from "@/lib/settings";
 import { formatPrice, formatDate } from "@/lib/utils";
 import OrderActions from "./OrderActions";
@@ -177,6 +177,29 @@ export default async function AdminOrderDetailPage({
                 <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-mono text-gray-600">
                   CJ order id: {order.supplier_order_id}
                 </p>
+              )}
+              {order.supplier_cost != null && (
+                <div className="mt-3 space-y-1 rounded-lg bg-white px-3 py-2 text-sm">
+                  <div className="flex justify-between text-gray-500">
+                    <span>Customer paid</span>
+                    <span className="font-semibold text-gray-900">{formatPrice(order.total)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>CJ cost (product + shipping)</span>
+                    <span className="font-semibold text-gray-900">{formatPrice(order.supplier_cost)}</span>
+                  </div>
+                  {(() => {
+                    const profit = orderProfit(order);
+                    return (
+                      <div className="flex justify-between border-t border-gray-200 pt-1">
+                        <span className="font-bold">Net profit</span>
+                        <span className={`font-extrabold ${profit != null && profit < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                          {profit == null ? "—" : formatPrice(profit)}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
               )}
             </div>
           )}
