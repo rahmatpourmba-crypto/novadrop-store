@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { isAdmin } from "@/lib/session";
 import { getT } from "@/lib/i18n/server";
@@ -12,13 +11,7 @@ export default async function AdminLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const admin = await isAdmin();
-  const h = await headers();
-  const pathname = h.get("x-admin-pathname") ?? "";
-  const isLogin = pathname === "/admin/login";
-  if (!admin && !isLogin) redirect("/admin/login");
-  if (admin && isLogin) redirect("/admin");
-
-  if (isLogin) return <>{children}</>;
+  if (!admin) redirect("/admin/login");
 
   const t = await getT();
 

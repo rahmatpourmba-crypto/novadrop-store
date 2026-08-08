@@ -70,6 +70,28 @@ async function hydrate(p: Product): Promise<Product> {
   return { ...p, category_name: cat?.name, category_slug: cat?.slug };
 }
 
+/** Batch-hydrate: resolves all category names in one query (avoids N+1). */
+async function hydrateAll(products: Product[]): Promise<Product[]> {
+  if (products.length === 0) return products;
+  const ids = [
+    ...new Set(products.map((p) => p.category_id).filter((id): id is number => id != null)),
+  ];
+  let cats: Record<number, { slug: string; name: string }> = {};
+  if (ids.length > 0) {
+    const placeholders = ids.map(() => "?").join(",");
+    const rows = await db.all<{ id: number; slug: string; name: string }>(
+      `SELECT id, slug, name FROM categories WHERE id IN (${placeholders})`,
+      ids
+    );
+    cats = Object.fromEntries(rows.map((r) => [r.id, r]));
+  }
+  return products.map((p) => ({
+    ...p,
+    category_name: p.category_id != null ? cats[p.category_id]?.name : undefined,
+    category_slug: p.category_id != null ? cats[p.category_id]?.slug : undefined,
+  }));
+}
+
 export function imagesOf(p: Product): string[] {
   try {
     const arr = JSON.parse(p.images);
@@ -113,14 +135,14 @@ export async function listProducts(opts?: {
   }
   sql += " ORDER BY featured DESC, created_at DESC";
   const rows = await db.all<Product>(sql, params);
-  return Promise.all(rows.map(hydrate));
+  return hydrateAll(rows);
 }
 
 export async function listFeatured(): Promise<Product[]> {
   const rows = await db.all<Product>(
     "SELECT * FROM products WHERE is_active = 1 AND featured = 1 ORDER BY id DESC LIMIT 8"
   );
-  return Promise.all(rows.map(hydrate));
+  return hydrateAll(rows);
 }
 
 export async function listCategories(): Promise<Category[]> {

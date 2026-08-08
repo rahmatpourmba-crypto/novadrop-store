@@ -44,3 +44,9 @@ next-env.d.ts
 # local database
 /data/
 
+# opennext / wrangler
+/.open-next/
+/.wrangler/
+/cloudflare-env.d.ts
+/.dev.vars
+

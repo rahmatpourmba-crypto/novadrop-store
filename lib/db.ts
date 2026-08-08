@@ -1,8 +1,12 @@
-import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import bcrypt from "bcryptjs";
 import pg from "pg";
+import { cache } from "react";
+import type BetterSqlite3Database from "better-sqlite3";
+
+const nodeRequire = createRequire(import.meta.url);
 
 export type SqlParams = Array<string | number | null>;
 
@@ -11,11 +15,9 @@ pg.types.setTypeParser(20, (v) => parseInt(v, 10));
 
 declare global {
   // eslint-disable-next-line no-var
-  var __storeDb: Database.Database | undefined;
+  var __storeDb: BetterSqlite3Database.Database | undefined;
   // eslint-disable-next-line no-var
-  var __pgPool: pg.Pool | undefined;
-  // eslint-disable-next-line no-var
-  var __pgInit: Promise<void> | undefined;
+  var __pgSchemaInit: Promise<void> | undefined;
 }
 
 export interface TxClient {
@@ -424,8 +426,15 @@ CREATE TABLE IF NOT EXISTS sessions (
 `;
 
 class SqliteBackend implements Backend {
-  private db(): Database.Database {
+  private db(): BetterSqlite3Database.Database {
     if (!globalThis.__storeDb) {
+      // Lazy require keeps the native better-sqlite3 module out of the
+      // Cloudflare Worker bundle; it is only ever used for local SQLite dev.
+      // The module name is built at runtime so the bundler/tracer never
+      // resolves it, and the native .node binary is never traced into the
+      // worker output (SQLite never runs on Cloudflare — Postgres is used).
+      const sqliteModule = ["better", "sqlite3"].join("-");
+      const Database = nodeRequire(sqliteModule) as typeof BetterSqlite3Database;
       const dataDir = path.join(process.cwd(), "data");
       fs.mkdirSync(dataDir, { recursive: true });
       const dbPath = process.env.DATABASE_PATH || path.join(dataDir, "store.db");
@@ -440,7 +449,7 @@ class SqliteBackend implements Backend {
     return globalThis.__storeDb;
   }
 
-  private migrate(db: Database.Database) {
+  private migrate(db: BetterSqlite3Database.Database) {
     const cols = db.prepare("PRAGMA table_info(customers)").all() as Array<{ name: string }>;
     if (!cols.some((c) => c.name === "country_code")) {
       db.exec("ALTER TABLE customers ADD COLUMN country_code TEXT DEFAULT ''");
@@ -461,7 +470,7 @@ class SqliteBackend implements Backend {
     }
   }
 
-  private seedIfEmpty(db: Database.Database) {
+  private seedIfEmpty(db: BetterSqlite3Database.Database) {
     const count = db.prepare("SELECT COUNT(*) AS c FROM products").get() as { c: number };
     if (count.c > 0) return;
 
@@ -554,19 +563,23 @@ class SqliteBackend implements Backend {
 /* ------------------------------------------------------------------ */
 
 class PgBackend implements Backend {
-  private pool(): pg.Pool {
-    if (!globalThis.__pgPool) {
-      const url = process.env.DATABASE_URL!;
-      globalThis.__pgPool = new pg.Pool({
-        connectionString: url,
-        max: 5,
-        idleTimeoutMillis: 30000,
-        ...(/neon\.tech/.test(url) || url.includes("sslmode=require")
-          ? { ssl: { rejectUnauthorized: false } }
-          : {}),
-      });
-    }
-    return globalThis.__pgPool;
+  /** Per-request pool. Never reused across requests (Workers sockets die between requests). */
+  private pool: pg.Pool;
+
+  constructor() {
+    const url = process.env.DATABASE_URL!;
+    this.pool = new pg.Pool({
+      connectionString: url,
+      max: 5,
+      // Fresh connection per query: no socket survives across requests/isolates.
+      maxUses: 1,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 15000,
+      query_timeout: 15000,
+      ...(/neon\.tech/.test(url) || url.includes("sslmode=require")
+        ? { ssl: { rejectUnauthorized: false } }
+        : {}),
+    });
   }
 
   /** Adapts shared SQL (SQLite-style) to Postgres. */
@@ -578,15 +591,26 @@ class PgBackend implements Backend {
   }
 
   async ensure(): Promise<void> {
-    if (!globalThis.__pgInit) {
-      globalThis.__pgInit = (async () => {
-        const pool = this.pool();
-        await pool.query(PG_SCHEMA);
-        await this.migrate(pool);
-        await this.seedIfEmpty(pool);
+    if (!globalThis.__pgSchemaInit) {
+      globalThis.__pgSchemaInit = (async () => {
+        const url = process.env.DATABASE_URL!;
+        const boot = new pg.Pool({
+          connectionString: url,
+          max: 1,
+          ...(/neon\.tech/.test(url) || url.includes("sslmode=require")
+            ? { ssl: { rejectUnauthorized: false } }
+            : {}),
+        });
+        try {
+          await boot.query(PG_SCHEMA);
+          await this.migrate(boot);
+          await this.seedIfEmpty(boot);
+        } finally {
+          await boot.end().catch(() => {});
+        }
       })();
     }
-    return globalThis.__pgInit;
+    return globalThis.__pgSchemaInit;
   }
 
   private async migrate(pool: pg.Pool) {
@@ -651,27 +675,27 @@ class PgBackend implements Backend {
   }
 
   async get(sql: string, params: SqlParams = []): Promise<unknown> {
-    const res = await this.pool().query(this.toPg(sql), params);
+    const res = await this.pool.query(this.toPg(sql), params);
     return res.rows[0] ?? undefined;
   }
 
   async all(sql: string, params: SqlParams = []): Promise<unknown[]> {
-    const res = await this.pool().query(this.toPg(sql), params);
+    const res = await this.pool.query(this.toPg(sql), params);
     return res.rows;
   }
 
   async run(sql: string, params: SqlParams = []): Promise<{ changes: number }> {
-    const res = await this.pool().query(this.toPg(sql), params);
+    const res = await this.pool.query(this.toPg(sql), params);
     return { changes: res.rowCount ?? 0 };
   }
 
   async insert(sql: string, params: SqlParams = []): Promise<number> {
-    const res = await this.pool().query(this.toPg(sql) + " RETURNING id", params);
+    const res = await this.pool.query(this.toPg(sql) + " RETURNING id", params);
     return Number(res.rows[0]?.id ?? 0);
   }
 
   async withTx<T>(fn: (tx: TxClient) => Promise<T>): Promise<T> {
-    const client = await this.pool().connect();
+    const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const tx: TxClient = {
@@ -699,10 +723,12 @@ class PgBackend implements Backend {
 /* Facade                                                              */
 /* ------------------------------------------------------------------ */
 
-function getBackend(): Backend {
+// Per-request backend. Each request gets a fresh backend (fresh PG pool);
+// connections are never reused across requests (Workers sockets die between requests).
+const getBackend = cache((): Backend => {
   const usePg = !!process.env.DATABASE_URL;
   return usePg ? new PgBackend() : new SqliteBackend();
-}
+});
 
 export async function ensureDb(): Promise<void> {
   await getBackend().ensure();
